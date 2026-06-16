@@ -1,83 +1,63 @@
+import * as React from "react";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+  getCurrentUser,
+  signOut as apiSignOut,
+  type SessionUser,
+  type Role,
+} from "@/backend/auth.api";
 
-type Role =
-  | "super_admin"
-  | "hr_admin"
-  | "account_manager"
-  | "reporting_manager"
-  | "employee";
+export type { Role };
 
 type AuthState = {
-  user: User | null;
-  session: Session | null;
+  user: SessionUser | null;
   roles: Role[];
   loading: boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
-  refreshRoles: () => Promise<void>;
+  refreshUser: () => void;
 };
 
-const AuthContext = createContext<AuthState | null>(null);
+const AuthContext = React.createContext<AuthState | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = React.useState<SessionUser | null>(null);
+  const [loading, setLoading] = React.useState(true);
 
-  const loadRoles = useCallback(async (userId: string | undefined) => {
-    if (!userId) {
-      setRoles([]);
-      return;
-    }
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    setRoles((data ?? []).map((r) => r.role as Role));
+  const refresh = React.useCallback(() => {
+    const current = getCurrentUser();
+    setUser(current);
+    setLoading(false);
   }, []);
 
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setTimeout(() => loadRoles(s?.user.id), 0);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      loadRoles(data.session?.user.id).finally(() => setLoading(false));
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [loadRoles]);
+  React.useEffect(() => {
+    // Only runs on client — avoids SSR/hydration mismatch
+    refresh();
+  }, [refresh]);
 
-  const value = useMemo<AuthState>(
+  const value = React.useMemo<AuthState>(
     () => ({
-      session,
-      user: session?.user ?? null,
-      roles,
+      user,
+      roles: user?.roles ?? [],
       loading,
-      isAdmin: roles.includes("super_admin") || roles.includes("hr_admin"),
+      isAdmin: (user?.roles ?? []).some(
+        (r: Role) => r === "super_admin" || r === "hr_admin",
+      ),
       signOut: async () => {
-        await supabase.auth.signOut();
+        await apiSignOut();
+        setUser(null);
       },
-      refreshRoles: () => loadRoles(session?.user.id),
+      refreshUser: refresh,
     }),
-    [session, roles, loading, loadRoles],
+    [user, loading, refresh],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
+  const ctx = React.useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }

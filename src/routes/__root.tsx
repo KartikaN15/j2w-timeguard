@@ -4,34 +4,32 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { Toaster } from "@/components/ui/sonner";
-import { Button } from "@/components/ui/button";
+import {
+  LayoutDashboard, Clock, Umbrella, History, Menu, X,
+  LogOut, ChevronDown, ChevronRight, Shield, Activity,
+  CheckSquare, Smartphone, Users, FileText,
+  Building2, Home, BarChart3, Settings,
+} from "lucide-react";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-        <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Go home
-          </Link>
-        </div>
+        <h2 className="mt-4 text-xl font-semibold">Page not found</h2>
+        <Link to="/" className="mt-6 inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          Go home
+        </Link>
       </div>
     </div>
   );
@@ -43,32 +41,14 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
-            onClick={() => {
-              router.invalidate();
-              reset();
-            }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Try again
-          </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            Go home
-          </a>
+    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-4">
+      <div className="max-w-md text-center space-y-4">
+        <h1 className="text-xl font-semibold">Something went wrong</h1>
+        <p className="text-sm text-muted-foreground">{error.message}</p>
+        <div className="flex justify-center gap-3">
+          <button onClick={() => { router.invalidate(); reset(); }} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Try again</button>
+          <a href="/" className="rounded-lg border px-4 py-2 text-sm font-medium">Go home</a>
         </div>
       </div>
     </div>
@@ -80,21 +60,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
       { title: "J2W Attendance" },
-      { name: "description", content: "Geo-tagged attendance for J2W Business Solutions consultants." },
-      { property: "og:title", content: "J2W Attendance" },
-      { property: "og:description", content: "Geo-tagged attendance for J2W Business Solutions consultants." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-    ],
+    links: [{ rel: "stylesheet", href: appCss }],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -105,20 +73,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
+      <head><HeadContent /></head>
+      <body>{children}<Scripts /></body>
     </html>
   );
 }
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -130,66 +92,181 @@ function RootComponent() {
 }
 
 function AppShell() {
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, loading, isAdmin, signOut } = useAuth();
+  const routerState = useRouterState();
+  const isAuthPage = routerState.location.pathname === "/auth";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Auth page: render without layout
+  if (isAuthPage || (!user && !loading)) {
+    return <Outlet />;
+  }
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9]">
+      <div className="h-7 w-7 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+    </div>;
+  }
+
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <header className="border-b border-border bg-[var(--gradient-brand)] text-primary-foreground shadow-[var(--shadow-card)]">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-white/15 font-bold tracking-tight">
-              J2W
-            </span>
+    <div className="flex h-screen overflow-hidden bg-[#f4f6f9]">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-white border-r border-border shadow-sm
+        transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shrink-0
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+      `}>
+        {/* Logo */}
+        <div className="relative flex items-center justify-center border-b border-border px-4 py-4 shrink-0">
+          <img src="/logo.png" alt="Joules to Watts" className="h-12 w-full max-w-[150px] object-contain"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+              const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+              if (fallback) fallback.style.display = "flex";
+            }} />
+          <div className="hidden items-center gap-2 justify-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-solid text-white font-extrabold text-sm">J2W</div>
             <div className="leading-tight">
-              <div className="font-semibold">J2W Attendance</div>
-              <div className="text-[11px] uppercase tracking-widest opacity-75">
-                Business Solutions
+              <div className="font-bold text-xs text-foreground">Joules to Watts</div>
+              <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Time Matters</div>
+            </div>
+          </div>
+          <button className="absolute right-3 top-1/2 -translate-y-1/2 lg:hidden p-1 text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(false)}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* User profile */}
+        {user && (
+          <div className="border-b border-border px-4 py-3 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+                {user.user_metadata.full_name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-muted-foreground">Welcome back,</div>
+                <div className="text-sm font-semibold text-foreground truncate">{user.user_metadata.full_name.split(" ")[0]}</div>
               </div>
             </div>
-          </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            {user && (
-              <>
-                <NavTab to="/">Punch</NavTab>
-                <NavTab to="/history">History</NavTab>
-                {isAdmin && (
-                  <>
-                    <NavTab to="/admin/live">Live</NavTab>
-                    <NavTab to="/admin/devices">Devices</NavTab>
-                    <NavTab to="/admin/employees">Employees</NavTab>
-                  </>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
-                  onClick={() => signOut()}
-                >
-                  Sign out
-                </Button>
-              </>
-            )}
-          </nav>
+          </div>
+        )}
+
+        {/* Nav — scrollable */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+          {isAdmin ? (
+            <>
+              <div className="mb-2 px-3 pt-1 flex items-center gap-1.5">
+                <Shield className="h-3 w-3 text-primary/70" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">HR Portal</span>
+              </div>
+              <NavItem to="/admin/live" icon={<Activity className="h-4 w-4" />} label="Dashboard" />
+              <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label="User Management" />
+              <NavItem to="/admin/employees" icon={<Building2 className="h-4 w-4" />} label="Configuration" />
+              <NavItem to="/admin/leaves" icon={<CheckSquare className="h-4 w-4" />} label="Leave Approvals" />
+              <NavItem to="/admin/devices" icon={<Smartphone className="h-4 w-4" />} label="Devices" />
+            </>
+          ) : (
+            <>
+              <NavItem to="/" icon={<LayoutDashboard className="h-4 w-4" />} label="Home" exact />
+              <NavSection label="Leave" icon={<Umbrella className="h-4 w-4" />} defaultOpen>
+                <NavSubItem to="/leaves" search={{ tab: "apply" }} label="Apply Leave" icon={<FileText className="h-3.5 w-3.5" />} />
+                <NavSubItem to="/leaves" search={{ tab: "balances" }} label="Leave Balances" icon={<BarChart3 className="h-3.5 w-3.5" />} />
+                <NavSubItem to="/leaves" search={{ tab: "history" }} label="Leave History" icon={<History className="h-3.5 w-3.5" />} />
+              </NavSection>
+              <NavSection label="Attendance" icon={<Clock className="h-4 w-4" />} defaultOpen>
+                <NavSubItem to="/history" label="Attendance Logs" icon={<History className="h-3.5 w-3.5" />} />
+              </NavSection>
+              <NavItem to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
+            </>
+          )}
+        </nav>
+
+        {/* Sign out — bottom */}
+        <div className="shrink-0 border-t border-border px-3 py-3">
+          <button onClick={() => signOut()}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+          <div className="mt-1 px-3 text-center text-[10px] text-muted-foreground/40">
+            Demo · resets on refresh
+          </div>
         </div>
-      </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
-        <Outlet />
-      </main>
-      <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
-        J2W Business Solutions · Confidential · All punch events are immutable.
-      </footer>
+      </aside>
+
+      {/* ── Main content (scrollable) ── */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        {/* Mobile-only top bar */}
+        <header className="lg:hidden shrink-0 flex h-14 items-center gap-3 border-b border-border bg-white px-4">
+          <button onClick={() => setSidebarOpen(true)}
+            className="rounded-lg p-1.5 hover:bg-muted/50 text-muted-foreground">
+            <Menu className="h-5 w-5" />
+          </button>
+          <img src="/logo.png" alt="J2W" className="h-7 w-auto object-contain"
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        </header>
+
+        {/* Scrollable page content */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
 
-function NavTab({ to, children }: { to: string; children: ReactNode }) {
+// ── Nav components ────────────────────────────────────────────────────────────
+
+function NavItem({ to, icon, label, exact }: { to: string; icon: ReactNode; label: string; exact?: boolean }) {
   return (
     <Link
       to={to}
-      className="rounded-md px-3 py-1.5 text-primary-foreground/80 hover:bg-white/15 hover:text-primary-foreground"
-      activeProps={{ className: "rounded-md px-3 py-1.5 bg-white/20 text-primary-foreground font-medium" }}
-      activeOptions={{ exact: to === "/" }}
+      activeOptions={{ exact }}
+      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+      activeProps={{ className: "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-primary bg-primary/8 border-l-2 border-primary" }}
     >
-      {children}
+      {icon}
+      {label}
     </Link>
+  );
+}
+
+function NavSubItem({ to, icon, label, search }: { to: string; icon: ReactNode; label: string; search?: Record<string, string> }) {
+  return (
+    <Link
+      to={to as "/leaves" | "/history"}
+      search={search as any}
+      className="flex items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+      activeProps={{ className: "flex items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-[13px] font-semibold text-primary bg-primary/8" }}
+      activeOptions={{ exact: true, includeSearch: !!search }}
+    >
+      {icon}
+      {label}
+    </Link>
+  );
+}
+
+function NavSection({ label, icon, children, defaultOpen }: {
+  label: string; icon: ReactNode; children: ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+      >
+        {icon}
+        <span className="flex-1 text-left">{label}</span>
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
+      {open && <div className="mt-0.5 space-y-0.5">{children}</div>}
+    </div>
   );
 }

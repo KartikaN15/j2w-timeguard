@@ -9,14 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as LeavesRouteImport } from './routes/leaves'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminLiveRouteImport } from './routes/admin.live'
+import { Route as AdminLeavesRouteImport } from './routes/admin.leaves'
 import { Route as AdminEmployeesRouteImport } from './routes/admin.employees'
 import { Route as AdminDevicesRouteImport } from './routes/admin.devices'
+import { Route as AdminAttendanceUserIdRouteImport } from './routes/admin.attendance.$userId'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeavesRoute = LeavesRouteImport.update({
+  id: '/leaves',
+  path: '/leaves',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -37,9 +52,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminLiveRoute = AdminLiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLeavesRoute = AdminLeavesRouteImport.update({
+  id: '/leaves',
+  path: '/leaves',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminEmployeesRoute = AdminEmployeesRouteImport.update({
@@ -52,24 +77,39 @@ const AdminDevicesRoute = AdminDevicesRouteImport.update({
   path: '/devices',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAttendanceUserIdRoute = AdminAttendanceUserIdRouteImport.update({
+  id: '/attendance/$userId',
+  path: '/attendance/$userId',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
+  '/leaves': typeof LeavesRoute
+  '/settings': typeof SettingsRoute
   '/admin/devices': typeof AdminDevicesRoute
   '/admin/employees': typeof AdminEmployeesRoute
+  '/admin/leaves': typeof AdminLeavesRoute
   '/admin/live': typeof AdminLiveRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/admin/attendance/$userId': typeof AdminAttendanceUserIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
+  '/leaves': typeof LeavesRoute
+  '/settings': typeof SettingsRoute
   '/admin/devices': typeof AdminDevicesRoute
   '/admin/employees': typeof AdminEmployeesRoute
+  '/admin/leaves': typeof AdminLeavesRoute
   '/admin/live': typeof AdminLiveRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/admin/attendance/$userId': typeof AdminAttendanceUserIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,9 +117,14 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
+  '/leaves': typeof LeavesRoute
+  '/settings': typeof SettingsRoute
   '/admin/devices': typeof AdminDevicesRoute
   '/admin/employees': typeof AdminEmployeesRoute
+  '/admin/leaves': typeof AdminLeavesRoute
   '/admin/live': typeof AdminLiveRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/admin/attendance/$userId': typeof AdminAttendanceUserIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -88,27 +133,42 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/history'
+    | '/leaves'
+    | '/settings'
     | '/admin/devices'
     | '/admin/employees'
+    | '/admin/leaves'
     | '/admin/live'
+    | '/admin/users'
+    | '/admin/attendance/$userId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
     | '/auth'
     | '/history'
+    | '/leaves'
+    | '/settings'
     | '/admin/devices'
     | '/admin/employees'
+    | '/admin/leaves'
     | '/admin/live'
+    | '/admin/users'
+    | '/admin/attendance/$userId'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/auth'
     | '/history'
+    | '/leaves'
+    | '/settings'
     | '/admin/devices'
     | '/admin/employees'
+    | '/admin/leaves'
     | '/admin/live'
+    | '/admin/users'
+    | '/admin/attendance/$userId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -116,10 +176,26 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRoute
   HistoryRoute: typeof HistoryRoute
+  LeavesRoute: typeof LeavesRoute
+  SettingsRoute: typeof SettingsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaves': {
+      id: '/leaves'
+      path: '/leaves'
+      fullPath: '/leaves'
+      preLoaderRoute: typeof LeavesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/history': {
       id: '/history'
       path: '/history'
@@ -148,11 +224,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/live': {
       id: '/admin/live'
       path: '/live'
       fullPath: '/admin/live'
       preLoaderRoute: typeof AdminLiveRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/leaves': {
+      id: '/admin/leaves'
+      path: '/leaves'
+      fullPath: '/admin/leaves'
+      preLoaderRoute: typeof AdminLeavesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/employees': {
@@ -169,19 +259,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDevicesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/attendance/$userId': {
+      id: '/admin/attendance/$userId'
+      path: '/attendance/$userId'
+      fullPath: '/admin/attendance/$userId'
+      preLoaderRoute: typeof AdminAttendanceUserIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
   AdminDevicesRoute: typeof AdminDevicesRoute
   AdminEmployeesRoute: typeof AdminEmployeesRoute
+  AdminLeavesRoute: typeof AdminLeavesRoute
   AdminLiveRoute: typeof AdminLiveRoute
+  AdminUsersRoute: typeof AdminUsersRoute
+  AdminAttendanceUserIdRoute: typeof AdminAttendanceUserIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminDevicesRoute: AdminDevicesRoute,
   AdminEmployeesRoute: AdminEmployeesRoute,
+  AdminLeavesRoute: AdminLeavesRoute,
   AdminLiveRoute: AdminLiveRoute,
+  AdminUsersRoute: AdminUsersRoute,
+  AdminAttendanceUserIdRoute: AdminAttendanceUserIdRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
@@ -191,6 +294,8 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRoute,
   HistoryRoute: HistoryRoute,
+  LeavesRoute: LeavesRoute,
+  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

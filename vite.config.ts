@@ -6,10 +6,15 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+const isRender = process.env.RENDER === "true";
+
 export default defineConfig({
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Outside Lovable (e.g. self-hosting on Render), override the Nitro preset to Node.js.
+  // Inside a Lovable build this is ignored — Lovable forces cloudflare-module.
+  ...(isRender && {
+    nitro: { preset: "node-server" },
+  }),
 });

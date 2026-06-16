@@ -142,7 +142,17 @@
   }
 
   body {
-    background-color: var(--color-background);
+    background-color: #f0f4f8;
     color: var(--color-foreground);
   }
+}
+
+/* Gradient helpers — bg-[var(--gradient-brand)] doesn't work in Tailwind v4
+   because Tailwind uses background-color, not background. Use .bg-brand instead. */
+.bg-brand {
+  background: var(--gradient-brand);
+}
+
+.bg-brand-solid {
+  background: oklch(0.26 0.11 260);
 }

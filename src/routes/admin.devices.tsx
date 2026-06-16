@@ -1,10 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
-import { approveDevice } from "@/lib/punch.functions";
+import { useAuth } from "@/lib/auth-context";
+import {
+  getPendingDevices,
+  getApprovedDevices,
+  approveDevice,
+  rejectDevice,
+  revokeDevice,
+  type PendingDeviceRow,
+  type ApprovedDeviceRow,
+} from "@/backend/devices.api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -16,114 +24,93 @@ import {
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/devices")({
-  head: () => ({ meta: [{ title: "Device approvals · J2W" }] }),
+  head: () => ({ meta: [{ title: "Device Approvals · J2W" }] }),
   component: AdminDevices,
 });
 
-type Pending = {
-  id: string;
-  user_id: string;
-  fingerprint: string;
-  user_agent: string | null;
-  requested_at: string;
-  profiles: { full_name: string | null; email: string | null } | null;
-};
-
-type Approved = {
-  id: string;
-  user_id: string;
-  fingerprint: string;
-  label: string | null;
-  approved_at: string;
-  profiles: { full_name: string | null; email: string | null } | null;
-};
-
 function AdminDevices() {
-  const [pending, setPending] = useState<Pending[]>([]);
-  const [approved, setApproved] = useState<Approved[]>([]);
-  const approveFn = useServerFn(approveDevice);
+  const { user } = useAuth();
+  const [pending, setPending] = useState<PendingDeviceRow[]>([]);
+  const [approved, setApproved] = useState<ApprovedDeviceRow[]>([]);
 
   async function load() {
-    const [{ data: p }, { data: a }] = await Promise.all([
-      supabase
-        .from("pending_devices")
-        .select("id,user_id,fingerprint,user_agent,requested_at, profiles(full_name,email)")
-        .order("requested_at", { ascending: true }),
-      supabase
-        .from("user_devices")
-        .select("id,user_id,fingerprint,label,approved_at, profiles(full_name,email)")
-        .order("approved_at", { ascending: false }),
-    ]);
-    setPending((p ?? []) as unknown as Pending[]);
-    setApproved((a ?? []) as unknown as Approved[]);
+    const [p, a] = await Promise.all([getPendingDevices(), getApprovedDevices()]);
+    setPending(p);
+    setApproved(a);
   }
 
-  useEffect(() => {
+  useEffect(() => { load(); }, []);
+
+  async function onApprove(row: PendingDeviceRow) {
+    if (!user) return;
+    const res = await approveDevice(row.id, user.id);
+    if (res.ok) { toast.success("Device approved."); load(); }
+    else toast.error(res.reason);
+  }
+
+  async function onReject(row: PendingDeviceRow) {
+    if (!user || !confirm("Reject and remove this device request?")) return;
+    await rejectDevice(row.id, user.id);
+    toast.success("Device request rejected.");
     load();
-  }, []);
-
-  async function approve(pendingRow: Pending) {
-    const res = await approveFn({ data: { pending_id: pendingRow.id } });
-    if (res.ok) {
-      toast.success("Device approved.");
-      load();
-    } else {
-      toast.error(res.reason);
-    }
   }
 
-  async function revoke(d: Approved) {
-    if (!confirm("Revoke this device?")) return;
-    const { error } = await supabase.from("user_devices").delete().eq("id", d.id);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Revoked.");
-      load();
-    }
+  async function onRevoke(row: ApprovedDeviceRow) {
+    if (!user || !confirm("Revoke this device? The employee will not be able to punch in until re-approved.")) return;
+    await revokeDevice(row.id, user.id);
+    toast.success("Device revoked.");
+    load();
   }
 
   return (
     <div className="space-y-6">
+      {/* Pending */}
       <Card>
-        <CardHeader>
-          <CardTitle>Pending approvals ({pending.length})</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Pending approvals</CardTitle>
+          <Badge variant={pending.length > 0 ? "destructive" : "secondary"}>
+            {pending.length}
+          </Badge>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Fingerprint</TableHead>
-                <TableHead>Device</TableHead>
+                <TableHead>Device / UA</TableHead>
                 <TableHead>Requested</TableHead>
-                <TableHead></TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pending.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                    Nothing pending.
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    No pending requests.
                   </TableCell>
                 </TableRow>
               )}
               {pending.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>
-                    <div className="font-medium">{p.profiles?.full_name ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">{p.profiles?.email}</div>
+                    <div className="font-medium">{p.employee_name}</div>
+                    <div className="text-xs text-muted-foreground">{p.email}</div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{p.fingerprint.slice(0, 12)}…</TableCell>
-                  <TableCell className="max-w-[280px] truncate text-xs text-muted-foreground">
-                    {p.user_agent}
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {p.fingerprint.slice(0, 14)}…
+                  </TableCell>
+                  <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
+                    {p.user_agent ?? "—"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(p.requested_at).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" onClick={() => approve(p)}>
-                      Approve
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" onClick={() => onApprove(p)}>Approve</Button>
+                      <Button size="sm" variant="outline" onClick={() => onReject(p)}>Reject</Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -132,33 +119,39 @@ function AdminDevices() {
         </CardContent>
       </Card>
 
+      {/* Approved */}
       <Card>
-        <CardHeader>
-          <CardTitle>Approved devices ({approved.length})</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Approved devices</CardTitle>
+          <Badge variant="secondary">{approved.length}</Badge>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Fingerprint</TableHead>
+                <TableHead>Label</TableHead>
                 <TableHead>Approved</TableHead>
-                <TableHead></TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {approved.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell>
-                    <div className="font-medium">{d.profiles?.full_name ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">{d.profiles?.email}</div>
+                    <div className="font-medium">{d.employee_name}</div>
+                    <div className="text-xs text-muted-foreground">{d.email}</div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{d.fingerprint.slice(0, 12)}…</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {d.fingerprint.slice(0, 14)}…
+                  </TableCell>
+                  <TableCell className="text-sm">{d.label ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(d.approved_at).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => revoke(d)}>
+                    <Button size="sm" variant="outline" onClick={() => onRevoke(d)}>
                       Revoke
                     </Button>
                   </TableCell>
