@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminLiveRouteImport } from './routes/admin.live'
+import { Route as AdminEmployeesRouteImport } from './routes/admin.employees'
 import { Route as AdminDevicesRouteImport } from './routes/admin.devices'
 
 const HistoryRoute = HistoryRouteImport.update({
@@ -41,6 +42,11 @@ const AdminLiveRoute = AdminLiveRouteImport.update({
   path: '/live',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEmployeesRoute = AdminEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDevicesRoute = AdminDevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/employees': typeof AdminEmployeesRoute
   '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/employees': typeof AdminEmployeesRoute
   '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/employees': typeof AdminEmployeesRoute
   '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRouteTypes {
@@ -80,9 +89,17 @@ export interface FileRouteTypes {
     | '/auth'
     | '/history'
     | '/admin/devices'
+    | '/admin/employees'
     | '/admin/live'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/auth' | '/history' | '/admin/devices' | '/admin/live'
+  to:
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/history'
+    | '/admin/devices'
+    | '/admin/employees'
+    | '/admin/live'
   id:
     | '__root__'
     | '/'
@@ -90,6 +107,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/history'
     | '/admin/devices'
+    | '/admin/employees'
     | '/admin/live'
   fileRoutesById: FileRoutesById
 }
@@ -137,6 +155,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLiveRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/employees': {
+      id: '/admin/employees'
+      path: '/employees'
+      fullPath: '/admin/employees'
+      preLoaderRoute: typeof AdminEmployeesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/devices': {
       id: '/admin/devices'
       path: '/devices'
@@ -149,11 +174,13 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminDevicesRoute: typeof AdminDevicesRoute
+  AdminEmployeesRoute: typeof AdminEmployeesRoute
   AdminLiveRoute: typeof AdminLiveRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminDevicesRoute: AdminDevicesRoute,
+  AdminEmployeesRoute: AdminEmployeesRoute,
   AdminLiveRoute: AdminLiveRoute,
 }
 
