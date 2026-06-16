@@ -13,6 +13,7 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminLiveRouteImport } from './routes/admin.live'
 import { Route as AdminDevicesRouteImport } from './routes/admin.devices'
 
 const HistoryRoute = HistoryRouteImport.update({
@@ -35,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLiveRoute = AdminLiveRouteImport.update({
+  id: '/live',
+  path: '/live',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDevicesRoute = AdminDevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,27 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/history': typeof HistoryRoute
   '/admin/devices': typeof AdminDevicesRoute
+  '/admin/live': typeof AdminLiveRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/auth' | '/history' | '/admin/devices'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/history'
+    | '/admin/devices'
+    | '/admin/live'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/auth' | '/history' | '/admin/devices'
-  id: '__root__' | '/' | '/admin' | '/auth' | '/history' | '/admin/devices'
+  to: '/' | '/admin' | '/auth' | '/history' | '/admin/devices' | '/admin/live'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/history'
+    | '/admin/devices'
+    | '/admin/live'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -108,6 +130,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/live': {
+      id: '/admin/live'
+      path: '/live'
+      fullPath: '/admin/live'
+      preLoaderRoute: typeof AdminLiveRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/devices': {
       id: '/admin/devices'
       path: '/devices'
@@ -120,10 +149,12 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminDevicesRoute: typeof AdminDevicesRoute
+  AdminLiveRoute: typeof AdminLiveRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminDevicesRoute: AdminDevicesRoute,
+  AdminLiveRoute: AdminLiveRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
