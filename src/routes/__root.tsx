@@ -11,6 +11,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider, useAuth } from "../lib/auth-context";
+import { Toaster } from "@/components/ui/sonner";
+import { Button } from "@/components/ui/button";
 
 function NotFoundComponent() {
   return (
@@ -78,10 +81,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "J2W Attendance" },
+      { name: "description", content: "Geo-tagged attendance for J2W Business Solutions consultants." },
+      { property: "og:title", content: "J2W Attendance" },
+      { property: "og:description", content: "Geo-tagged attendance for J2W Business Solutions consultants." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
@@ -118,8 +121,75 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <AuthProvider>
+        <AppShell />
+        <Toaster richColors position="top-right" />
+      </AuthProvider>
     </QueryClientProvider>
+  );
+}
+
+function AppShell() {
+  const { user, isAdmin, signOut } = useAuth();
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="border-b border-border bg-[var(--gradient-brand)] text-primary-foreground shadow-[var(--shadow-card)]">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3">
+          <Link to="/" className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-md bg-white/15 font-bold tracking-tight">
+              J2W
+            </span>
+            <div className="leading-tight">
+              <div className="font-semibold">J2W Attendance</div>
+              <div className="text-[11px] uppercase tracking-widest opacity-75">
+                Business Solutions
+              </div>
+            </div>
+          </Link>
+          <nav className="flex items-center gap-1 text-sm">
+            {user && (
+              <>
+                <NavTab to="/">Punch</NavTab>
+                <NavTab to="/history">History</NavTab>
+                {isAdmin && (
+                  <>
+                    <NavTab to="/admin/live">Live</NavTab>
+                    <NavTab to="/admin/devices">Devices</NavTab>
+                    <NavTab to="/admin/employees">Employees</NavTab>
+                  </>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                  onClick={() => signOut()}
+                >
+                  Sign out
+                </Button>
+              </>
+            )}
+          </nav>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+        <Outlet />
+      </main>
+      <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
+        J2W Business Solutions · Confidential · All punch events are immutable.
+      </footer>
+    </div>
+  );
+}
+
+function NavTab({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="rounded-md px-3 py-1.5 text-primary-foreground/80 hover:bg-white/15 hover:text-primary-foreground"
+      activeProps={{ className: "rounded-md px-3 py-1.5 bg-white/20 text-primary-foreground font-medium" }}
+      activeOptions={{ exact: to === "/" }}
+    >
+      {children}
+    </Link>
   );
 }
