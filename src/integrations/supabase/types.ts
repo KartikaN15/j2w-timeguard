@@ -14,16 +14,243 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      attendance_events: {
+        Row: {
+          accuracy_m: number | null
+          anomaly_flags: Json
+          device_fingerprint: string | null
+          event_type: Database["public"]["Enums"]["punch_event_type"]
+          geofence_status: Database["public"]["Enums"]["geofence_status"] | null
+          id: string
+          ip_address: string | null
+          lat: number | null
+          lng: number | null
+          mock_flag: boolean
+          selfie_path: string | null
+          ts_utc: string
+          user_id: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          anomaly_flags?: Json
+          device_fingerprint?: string | null
+          event_type: Database["public"]["Enums"]["punch_event_type"]
+          geofence_status?:
+            | Database["public"]["Enums"]["geofence_status"]
+            | null
+          id?: string
+          ip_address?: string | null
+          lat?: number | null
+          lng?: number | null
+          mock_flag?: boolean
+          selfie_path?: string | null
+          ts_utc?: string
+          user_id: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          anomaly_flags?: Json
+          device_fingerprint?: string | null
+          event_type?: Database["public"]["Enums"]["punch_event_type"]
+          geofence_status?:
+            | Database["public"]["Enums"]["geofence_status"]
+            | null
+          id?: string
+          ip_address?: string | null
+          lat?: number | null
+          lng?: number | null
+          mock_flag?: boolean
+          selfie_path?: string | null
+          ts_utc?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      audit_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          id: string
+          payload: Json
+          target: string | null
+          ts: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          id?: string
+          payload?: Json
+          target?: string | null
+          ts?: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          id?: string
+          payload?: Json
+          target?: string | null
+          ts?: string
+        }
+        Relationships: []
+      }
+      employee_config: {
+        Row: {
+          home_lat: number | null
+          home_lng: number | null
+          home_radius_m: number
+          office_lat: number | null
+          office_lng: number | null
+          office_radius_m: number
+          updated_at: string
+          user_id: string
+          weekly_schedule: Json
+        }
+        Insert: {
+          home_lat?: number | null
+          home_lng?: number | null
+          home_radius_m?: number
+          office_lat?: number | null
+          office_lng?: number | null
+          office_radius_m?: number
+          updated_at?: string
+          user_id: string
+          weekly_schedule?: Json
+        }
+        Update: {
+          home_lat?: number | null
+          home_lng?: number | null
+          home_radius_m?: number
+          office_lat?: number | null
+          office_lng?: number | null
+          office_radius_m?: number
+          updated_at?: string
+          user_id?: string
+          weekly_schedule?: Json
+        }
+        Relationships: []
+      }
+      pending_devices: {
+        Row: {
+          fingerprint: string
+          id: string
+          requested_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          fingerprint: string
+          id?: string
+          requested_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          fingerprint?: string
+          id?: string
+          requested_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      user_devices: {
+        Row: {
+          approved_at: string
+          approved_by: string | null
+          created_at: string
+          fingerprint: string
+          id: string
+          label: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string
+          approved_by?: string | null
+          created_at?: string
+          fingerprint: string
+          id?: string
+          label?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          approved_at?: string
+          approved_by?: string | null
+          created_at?: string
+          fingerprint?: string
+          id?: string
+          label?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "super_admin"
+        | "hr_admin"
+        | "account_manager"
+        | "reporting_manager"
+        | "employee"
+      geofence_status: "inside_office" | "inside_home" | "outside" | "no_config"
+      punch_event_type: "punch_in" | "punch_out"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +377,16 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "super_admin",
+        "hr_admin",
+        "account_manager",
+        "reporting_manager",
+        "employee",
+      ],
+      geofence_status: ["inside_office", "inside_home", "outside", "no_config"],
+      punch_event_type: ["punch_in", "punch_out"],
+    },
   },
 } as const
