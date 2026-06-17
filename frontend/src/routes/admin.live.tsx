@@ -1,8 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getDailyStatusFn } from "@/backend/server-fns";
-import type { EmployeeDayStatus } from "@/backend/punch.api";
-import { ExternalLink, RefreshCw, TrendingUp, AlertTriangle, Flag } from "lucide-react";
+import { getDailyStatusFn, getAttendanceTrendFn } from "@/backend/server-fns";
+import type { EmployeeDayStatus, TrendPoint } from "@/backend/server-fns";
+import { ExternalLink, RefreshCw, TrendingUp, AlertTriangle, Flag, Building2 } from "lucide-react";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from "recharts";
 
 export const Route = createFileRoute("/admin/live")({
   head: () => ({ meta: [{ title: "HR Dashboard · J2W" }] }),
@@ -11,13 +14,15 @@ export const Route = createFileRoute("/admin/live")({
 
 function AdminLive() {
   const [rows, setRows] = useState<EmployeeDayStatus[]>([]);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [spinning, setSpinning] = useState(false);
 
   function load() {
     setSpinning(true);
-    getDailyStatusFn().then((r) => {
+    Promise.all([getDailyStatusFn(), getAttendanceTrendFn(10)]).then(([r, t]) => {
       setRows(r);
+      setTrend(t);
       setLastRefresh(new Date());
       setTimeout(() => setSpinning(false), 600);
     });
@@ -37,6 +42,21 @@ function AdminLive() {
   const flagged = rows.filter((r) => r.anomalies.length > 0);
   const attendancePct = working.length > 0 ? Math.round(((present.length + clockedOut.length) / working.length) * 100) : 0;
 
+  // Group by client company for the breakdown cards
+  const byCompany = Object.values(
+    rows.reduce<Record<string, { name: string; total: number; present: number; leave: number; absent: number }>>((acc, r) => {
+      const key = r.client_company || "—";
+      acc[key] ??= { name: key, total: 0, present: 0, leave: 0, absent: 0 };
+      acc[key].total++;
+      if (r.status === "present" || r.status === "clocked_out") acc[key].present++;
+      else if (r.status === "on_leave") acc[key].leave++;
+      else if (r.status === "absent") acc[key].absent++;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.total - a.total);
+
+  const trendTotals = trend.reduce((s, d) => ({ on_time: s.on_time + d.on_time, late: s.late + d.late }), { on_time: 0, late: 0 });
+
   const now = new Date();
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   const dateStr = now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
@@ -45,12 +65,12 @@ function AdminLive() {
     <div className="space-y-5">
       {/* Hero banner */}
       <div className="relative rounded-2xl overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #1d4ed8 0%, #4f46e5 55%, #7c3aed 100%)" }}>
+        style={{ background: "linear-gradient(135deg, #6e2440 0%, #8c2f52 55%, #b8456e 100%)" }}>
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full opacity-15"
-            style={{ background: "radial-gradient(circle, #6366f1, transparent 70%)" }} />
+          <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full opacity-20"
+            style={{ background: "radial-gradient(circle, #f4c84c, transparent 70%)" }} />
           <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full opacity-10"
-            style={{ background: "radial-gradient(circle, #8b5cf6, transparent 70%)" }} />
+            style={{ background: "radial-gradient(circle, #f6d27e, transparent 70%)" }} />
         </div>
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
@@ -86,6 +106,61 @@ function AdminLive() {
               <div className="text-[10px] text-white/30">{s.sub}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Chart + company breakdown */}
+      <div className="grid gap-5 lg:grid-cols-[1fr,320px]">
+        {/* Attendance trend chart */}
+        <div className="rounded-2xl bg-white border border-border shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-bold text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" /> Attendance Status — last 10 days
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">First punch-in per employee, classified by shift start</p>
+            </div>
+            <div className="flex gap-3 text-xs">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#8c2f52" }} /> On-time {trendTotals.on_time}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#f4c84c" }} /> Late {trendTotals.late}</span>
+            </div>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{ fill: "rgba(140,47,82,0.06)" }} contentStyle={{ borderRadius: 12, border: "1px solid #eee", fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="on_time" name="On-time" fill="#8c2f52" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="late" name="Late" fill="#f4c84c" radius={[4, 4, 0, 0]} maxBarSize={26} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Company / department breakdown */}
+        <div className="rounded-2xl bg-white border border-border shadow-sm p-5">
+          <h2 className="font-bold text-base flex items-center gap-2 mb-4">
+            <Building2 className="h-4 w-4 text-primary" /> By Company
+          </h2>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {byCompany.length === 0 && <p className="text-sm text-muted-foreground">No data yet.</p>}
+            {byCompany.map((c) => (
+              <div key={c.name} className="rounded-xl border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold truncate">{c.name}</span>
+                  <span className="text-xs font-bold text-foreground">{c.total}</span>
+                </div>
+                <div className="mt-2 flex gap-3 text-[11px]">
+                  <span className="text-green-600 font-semibold">{c.present} present</span>
+                  <span className="text-amber-600 font-semibold">{c.leave} leave</span>
+                  <span className={c.absent > 0 ? "text-red-600 font-semibold" : "text-muted-foreground"}>{c.absent} absent</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

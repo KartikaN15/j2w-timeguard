@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+.tanstack
+.output
+src/routeTree.gen.ts
+*.log
+.DS_Store

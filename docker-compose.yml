@@ -1,0 +1,35 @@
+# ─── J2W Timeguard — backend API + frontend (database = MongoDB Atlas) ───────
+# Secrets are read from a gitignored root `.env` file (auto-loaded by compose).
+#
+# Usage:
+#   1. Ensure the root `.env` exists with MONGO_URI / JWT_SECRET / CORS_ORIGIN.
+#   2. docker compose up -d --build
+#   3. docker compose run --rm backend npm run seed   (first time, optional)
+#
+# Frontend → http://localhost:3000  (nginx; proxies /api to backend)
+# Backend  → http://localhost:4000
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      MONGO_URI: ${MONGO_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty = same-origin; nginx in the frontend container proxies /api → backend
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"

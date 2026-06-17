@@ -2,12 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
-  getLeaveTypes, getLeaveBalances, getLeaveRequests, applyLeave, cancelLeave,
-  type LeaveType,
-} from "@/backend/leaves.api";
+  getLeaveTypesFn, getLeaveBalancesFn, getLeaveRequestsFn, applyLeaveFn, cancelLeaveFn, getApproversFn,
+  type LeaveTypeRow, type LeaveBalanceRow, type LeaveRequestRow, type ApproverRow,
+} from "@/backend/server-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/DatePicker";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -25,15 +26,10 @@ export const Route = createFileRoute("/leaves")({
   component: LeavesPage,
 });
 
-type BalanceRow = Awaited<ReturnType<typeof getLeaveBalances>>[number];
-type RequestRow = Awaited<ReturnType<typeof getLeaveRequests>>[number];
+type BalanceRow = LeaveBalanceRow;
+type RequestRow = LeaveRequestRow;
 
-const DUMMY_MANAGERS = [
-  { id: "mgr-1", name: "Preethi Sharma", role: "HRBP · J2W Business Solutions" },
-  { id: "mgr-2", name: "Rajesh Kumar", role: "Delivery Manager · GE Healthcare" },
-  { id: "mgr-3", name: "Sunitha Reddy", role: "Team Lead · TCS" },
-  { id: "mgr-4", name: "Arjun Verma", role: "Account Manager · J2W" },
-];
+const NO_APPROVER: ApproverRow = { id: "", name: "HR Team", role: "Pending HR assignment" };
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 border-amber-200",
@@ -48,7 +44,7 @@ function LeavesPage() {
   const { tab } = Route.useSearch();
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRow[]>([]);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
@@ -58,9 +54,9 @@ function LeavesPage() {
   async function reload() {
     if (!user) return;
     const [bal, reqs, types] = await Promise.all([
-      getLeaveBalances(user.id),
-      getLeaveRequests(user.id),
-      getLeaveTypes(),
+      getLeaveBalancesFn(),
+      getLeaveRequestsFn(),
+      getLeaveTypesFn(),
     ]);
     setBalances(bal);
     setRequests(reqs);
@@ -131,7 +127,7 @@ function LeavesPage() {
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 font-bold text-primary text-[10px]">{b.leave_type.code}</span>
-                      <span className="text-xs text-foreground">{b.leave_type.name}</span>
+                      <span className="text-xs text-foreground">{b.leave_type.label}</span>
                     </div>
                     <span className="text-xs font-semibold text-foreground">{avail}/{b.total_days}</span>
                   </div>
@@ -155,7 +151,7 @@ function LeavesPage() {
 
 function ApplyTab({ user, leaveTypes, balances, onApplied }: {
   user: { id: string };
-  leaveTypes: LeaveType[];
+  leaveTypes: LeaveTypeRow[];
   balances: BalanceRow[];
   onApplied: () => void;
 }) {
@@ -167,11 +163,20 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
   const [toSession, setToSession] = useState<"1" | "2">("2");
   const [reason, setReason] = useState("");
   const [contactDetails, setContactDetails] = useState("");
-  const [managerId, setManagerId] = useState(DUMMY_MANAGERS[0].id);
+  const [approvers, setApprovers] = useState<ApproverRow[]>([]);
+  const [managerId, setManagerId] = useState("");
   const [busy, setBusy] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
 
-  const selectedManager = DUMMY_MANAGERS.find((m) => m.id === managerId) ?? DUMMY_MANAGERS[0];
+  // Load the real list of HR admins who can approve leave.
+  useEffect(() => {
+    getApproversFn().then((apprs) => {
+      setApprovers(apprs);
+      if (apprs.length > 0) setManagerId((cur) => cur || apprs[0].id);
+    });
+  }, []);
+
+  const selectedManager = approvers.find((m) => m.id === managerId) ?? approvers[0] ?? NO_APPROVER;
   const managerInitials = selectedManager.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   const selectedType = leaveTypes.find((lt) => lt.id === leaveTypeId);
@@ -195,14 +200,12 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
   async function submit() {
     if (!fromDate || !toDate) { toast.error("Please fill all required fields."); return; }
     setBusy(true);
-    const res = await applyLeave({
-      user_id: user.id,
+    const res = await applyLeaveFn({ data: {
       leave_type_id: leaveTypeId,
       from_date: fromDate,
       to_date: toDate,
-      day_type: dayType,
       reason,
-    });
+    } });
     setBusy(false);
     if (res.ok) { toast.success("Leave request submitted successfully."); onApplied(); }
     else toast.error(res.reason);
@@ -236,7 +239,7 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
               </SelectTrigger>
               <SelectContent>
                 {leaveTypes.map((lt) => (
-                  <SelectItem key={lt.id} value={lt.id}>{lt.name} ({lt.code})</SelectItem>
+                  <SelectItem key={lt.id} value={lt.id}>{lt.label} ({lt.code})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -247,7 +250,7 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
             <div className="space-y-1.5">
               <Label className="text-sm">From date <span className="text-red-500">*</span></Label>
               <div className="flex gap-2">
-                <Input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); if (e.target.value > toDate) setToDate(e.target.value); }} className="flex-1 h-10" />
+                <DatePicker value={fromDate} onChange={(v) => { setFromDate(v); if (v > toDate) setToDate(v); }} className="flex-1" />
                 <Select value={fromSession} onValueChange={(v) => setFromSession(v as "1" | "2")}>
                   <SelectTrigger className="w-32 h-10">
                     <SelectValue />
@@ -263,7 +266,7 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
             <div className="space-y-1.5">
               <Label className="text-sm">To date <span className="text-red-500">*</span></Label>
               <div className="flex gap-2">
-                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} min={fromDate} className="flex-1 h-10" />
+                <DatePicker value={toDate} onChange={setToDate} min={fromDate} className="flex-1" />
                 <Select value={toSession} onValueChange={(v) => setToSession(v as "1" | "2")}>
                   <SelectTrigger className="w-32 h-10">
                     <SelectValue />
@@ -294,16 +297,18 @@ function ApplyTab({ user, leaveTypes, balances, onApplied }: {
                 <div className="text-sm font-medium">{selectedManager.name}</div>
                 <div className="text-xs text-muted-foreground">{selectedManager.role}</div>
               </div>
-              <Select value={managerId} onValueChange={setManagerId}>
-                <SelectTrigger className="w-28 h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DUMMY_MANAGERS.map((m) => (
-                    <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {approvers.length > 0 && (
+                <Select value={managerId} onValueChange={setManagerId}>
+                  <SelectTrigger className="w-28 h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {approvers.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 
@@ -393,7 +398,7 @@ function RequestList({ requests, user, onAction, emptyText }: {
 }) {
   async function onCancel(r: RequestRow) {
     if (!confirm("Cancel this leave request?")) return;
-    const res = await cancelLeave(r.id, user.id);
+    const res = await cancelLeaveFn({ data: { requestId: r.id } });
     if (res.ok) { toast.success("Leave request cancelled."); onAction(); }
     else toast.error(res.reason);
   }
@@ -417,7 +422,7 @@ function RequestList({ requests, user, onAction, emptyText }: {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm">{r.leave_type.name}</span>
+              <span className="font-semibold text-sm">{r.leave_type.label}</span>
               <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[r.status]}`}>
                 {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
               </span>
@@ -428,13 +433,12 @@ function RequestList({ requests, user, onAction, emptyText }: {
             <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
               <span>{r.from_date} → {r.to_date}</span>
               <span>·</span>
-              <span>{r.total_days} day{r.total_days !== 1 ? "s" : ""}</span>
-              {r.day_type !== "full" && <span className="text-amber-600">({r.day_type.replace("_", " ")})</span>}
+              <span>{r.days} day{r.days !== 1 ? "s" : ""}</span>
             </div>
             {r.reason && <div className="mt-1 text-xs text-muted-foreground">Reason: {r.reason}</div>}
-            {r.rejection_reason && (
+            {r.status === "rejected" && r.reason && (
               <div className="mt-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-1.5 text-xs text-red-700">
-                Rejected: {r.rejection_reason}
+                Rejected: {r.reason}
               </div>
             )}
             {r.reviewed_at && (
@@ -466,7 +470,7 @@ function BalancesTab({ balances }: { balances: BalanceRow[] }) {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{b.leave_type.code}</div>
-                  <div className="text-sm text-foreground mt-0.5">{b.leave_type.name}</div>
+                  <div className="text-sm text-foreground mt-0.5">{b.leave_type.label}</div>
                 </div>
                 <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${b.leave_type.is_paid ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                   {b.leave_type.is_paid ? "Paid" : "Unpaid"}

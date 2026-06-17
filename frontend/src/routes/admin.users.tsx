@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getEmployees, createEmployee, type EmployeeRow } from "@/backend/employees.api";
+import {
+  getEmployeeListFn,
+  createEmployeeFn,
+  type CreateEmployeeInput,
+} from "@/backend/server-fns";
+
+type EmployeeRow = {
+  id: string; full_name: string; email: string; client_company: string;
+  roles: string[];
+  config: { weekly_schedule: Record<string, string>; office_lat?: number | null; home_lat?: number | null } | null;
+};
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,8 +49,8 @@ function UsersPage() {
   const [search, setSearch] = useState("");
 
   async function reload() {
-    const rows = await getEmployees();
-    setEmployees(rows);
+    const rows = await getEmployeeListFn();
+    setEmployees(rows as EmployeeRow[]);
   }
 
   useEffect(() => { reload(); }, []);
@@ -53,7 +63,7 @@ function UsersPage() {
 
   const stats = {
     total: employees.length,
-    wfo: employees.filter((e) => ["mon", "tue", "wed", "thu", "fri"].some((d) => e.config.weekly_schedule[d] === "WFO")).length,
+    wfo: employees.filter((e) => ["mon", "tue", "wed", "thu", "fri"].some((d) => e.config?.weekly_schedule?.[d] === "WFO")).length,
     clients: new Set(employees.map((e) => e.client_company)).size,
     admins: employees.filter((e) => e.roles.includes("hr_admin")).length,
   };
@@ -117,10 +127,10 @@ function UsersPage() {
               {filtered.map((emp) => {
                 const initials = emp.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
                 const isAdmin = emp.roles.includes("hr_admin") || emp.roles.includes("super_admin");
-                const hasOffice = emp.config.office_lat != null;
-                const hasHome = emp.config.home_lat != null;
+                const hasOffice = emp.config?.office_lat != null;
+                const hasHome = emp.config?.home_lat != null;
                 return (
-                  <tr key={emp.user_id} className="hover:bg-muted/20 transition-colors">
+                  <tr key={emp.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -147,7 +157,7 @@ function UsersPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-0.5 flex-wrap">
                         {DAY_KEYS.map((d) => {
-                          const s = emp.config.weekly_schedule[d] ?? "OFF";
+                          const s = emp.config?.weekly_schedule?.[d] ?? "OFF";
                           return (
                             <span key={d} title={`${d}: ${s}`}
                               className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase ${SCHEDULE_COLORS[s]}`}>
@@ -168,7 +178,7 @@ function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Link to="/admin/attendance/$userId" params={{ userId: emp.user_id }}
+                      <Link to="/admin/attendance/$userId" params={{ userId: emp.id }}
                         className="flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap">
                         <Calendar className="h-3 w-3" />Logs
                       </Link>
@@ -233,14 +243,14 @@ function AddEmployeeForm({ onCreated, onCancel }: {
       return;
     }
     setBusy(true);
-    const res = await createEmployee({
+    const res = await createEmployeeFn({ data: {
       full_name: fullName.trim(),
       email: email.trim().toLowerCase(),
       password,
       client_company: clientCompany.trim(),
       roles: isAdmin ? ["hr_admin", "employee"] : ["employee"],
-      weekly_schedule: schedule as any,
-    });
+      weekly_schedule: schedule,
+    } as CreateEmployeeInput });
     setBusy(false);
     if (res.ok) {
       onCreated({ full_name: fullName.trim(), email: email.trim().toLowerCase(), password });

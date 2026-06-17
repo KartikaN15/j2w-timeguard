@@ -1,12 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
 import {
-  getPendingLeaveRequests,
-  getLeaveRequests,
-  reviewLeave,
+  getLeaveRequestsFn,
+  reviewLeaveFn,
   type LeaveRequestRow,
-} from "@/backend/leaves.api";
+} from "@/backend/server-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +42,6 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function AdminLeaves() {
-  const { user } = useAuth();
   const [pending, setPending] = useState<LeaveRequestRow[]>([]);
   const [all, setAll] = useState<LeaveRequestRow[]>([]);
   const [rejecting, setRejecting] = useState<LeaveRequestRow | null>(null);
@@ -52,27 +49,29 @@ function AdminLeaves() {
   const [busy, setBusy] = useState(false);
 
   async function reload() {
-    const [p, a] = await Promise.all([getPendingLeaveRequests(), getLeaveRequests()]);
-    setPending(p);
-    setAll(a);
+    const [p, a] = await Promise.all([
+      getLeaveRequestsFn({ data: { status: 'pending' } }),
+      getLeaveRequestsFn(),
+    ]);
+    setPending(p as LeaveRequestRow[]);
+    setAll(a as LeaveRequestRow[]);
   }
 
   useEffect(() => { reload(); }, []);
 
   async function onApprove(req: LeaveRequestRow) {
-    if (!user) return;
     setBusy(true);
-    const res = await reviewLeave(req.id, "approved", user.id);
+    const res = await reviewLeaveFn({ data: { requestId: req.id, action: 'approved' } });
     setBusy(false);
     if (res.ok) { toast.success("Leave approved."); reload(); }
     else toast.error(res.reason);
   }
 
   async function onRejectSubmit() {
-    if (!user || !rejecting) return;
+    if (!rejecting) return;
     if (!rejectionReason.trim()) { toast.error("Please enter a rejection reason."); return; }
     setBusy(true);
-    const res = await reviewLeave(rejecting.id, "rejected", user.id, rejectionReason);
+    const res = await reviewLeaveFn({ data: { requestId: rejecting.id, action: 'rejected', reason: rejectionReason } });
     setBusy(false);
     if (res.ok) {
       toast.success("Leave rejected.");
@@ -142,11 +141,11 @@ function AdminLeaves() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{r.leave_type.code}</Badge>
-                        <div className="text-xs text-muted-foreground">{r.leave_type.name}</div>
+                        <div className="text-xs text-muted-foreground">{r.leave_type.label}</div>
                       </TableCell>
                       <TableCell className="text-sm">{r.from_date}</TableCell>
                       <TableCell className="text-sm">{r.to_date}</TableCell>
-                      <TableCell className="text-sm font-medium">{r.total_days}</TableCell>
+                      <TableCell className="text-sm font-medium">{r.days}</TableCell>
                       <TableCell className="max-w-[160px] truncate text-sm text-muted-foreground">
                         {r.reason ?? <span className="italic">No reason given</span>}
                       </TableCell>
@@ -217,7 +216,7 @@ function AdminLeaves() {
                         {r.from_date}
                         {r.from_date !== r.to_date && ` → ${r.to_date}`}
                       </TableCell>
-                      <TableCell className="text-sm">{r.total_days}</TableCell>
+                      <TableCell className="text-sm">{r.days}</TableCell>
                       <TableCell>
                         <Badge className={STATUS_STYLES[r.status]}>{r.status}</Badge>
                       </TableCell>
@@ -225,7 +224,7 @@ function AdminLeaves() {
                         {r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString() : "—"}
                       </TableCell>
                       <TableCell className="max-w-[200px] text-xs text-muted-foreground truncate">
-                        {r.rejection_reason ?? r.reason ?? "—"}
+                        {r.reason ?? "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -247,9 +246,9 @@ function AdminLeaves() {
               <div className="rounded-md bg-muted p-3 text-sm">
                 <div className="font-medium">{rejecting.employee_name}</div>
                 <div className="text-muted-foreground">
-                  {rejecting.leave_type.name} · {rejecting.from_date}
+                  {rejecting.leave_type.label} · {rejecting.from_date}
                   {rejecting.from_date !== rejecting.to_date && ` → ${rejecting.to_date}`}
-                  {" "}· {rejecting.total_days} day{rejecting.total_days !== 1 ? "s" : ""}
+                  {" "}· {rejecting.days} day{rejecting.days !== 1 ? "s" : ""}
                 </div>
               </div>
               <div className="space-y-1.5">

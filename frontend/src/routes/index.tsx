@@ -4,19 +4,20 @@ import { useAuth } from "@/lib/auth-context";
 import { getDeviceFingerprint } from "@/lib/fingerprint";
 import {
   submitPunchFn, getTodayEventsFn, getAttendanceStatsFn,
-  getDeviceStatusFn, getEmployeeConfigFn,
+  getDeviceStatusFn, getEmployeeConfigFn, getCompanyConfigFn,
 } from "@/backend/server-fns";
-import type { AttendanceStats } from "@/backend/punch.api";
-import type { EmployeeConfig } from "@/backend/mock-db";
+import type { AttendanceStats, EmployeeConfig } from "@/backend/server-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SwipeToPunch } from "@/components/SwipeToPunch";
+import { GeofenceMap } from "@/components/GeofenceMap";
 import { toast } from "sonner";
 import {
   MapPin, Smartphone, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Clock, Building2, Home, Navigation,
-  LogIn, LogOut, Wifi, WifiOff,
+  LogIn, LogOut, Wifi, WifiOff, Flame, AlarmClock, CalendarCheck, Timer, Bell,
 } from "lucide-react";
-import type { AttendanceEvent } from "@/backend/mock-db";
+import type { AttendanceEvent } from "@/backend/server-fns";
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000, toRad = (d: number) => (d * Math.PI) / 180;
@@ -32,11 +33,22 @@ export const Route = createFileRoute("/")({
 
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
+// Rotates daily so the home greeting feels fresh each day.
+const DAILY_MESSAGES = [
+  "Have a productive day!",
+  "Make today count!",
+  "Small steps, big results.",
+  "You've got this 💪",
+  "Stay focused, stay sharp.",
+  "Great work starts now ✨",
+  "One punch at a time.",
+];
+
 const SCHEDULE_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  WFO: { label: "Work from Office", color: "bg-blue-100 text-blue-700 border-blue-200", icon: <Building2 className="h-3.5 w-3.5" /> },
-  WFH: { label: "Work from Home", color: "bg-green-100 text-green-700 border-green-200", icon: <Home className="h-3.5 w-3.5" /> },
+  WFO: { label: "Work from Office", color: "bg-[#f6e6ee] text-[#8c2f52] border-[#ecccda]", icon: <Building2 className="h-3.5 w-3.5" /> },
+  WFH: { label: "Work from Home", color: "bg-[#fdf3d4] text-[#8a6d2a] border-[#f0e2bd]", icon: <Home className="h-3.5 w-3.5" /> },
   OFF: { label: "Non-working Day", color: "bg-gray-100 text-gray-500 border-gray-200", icon: <XCircle className="h-3.5 w-3.5" /> },
-  FLEX: { label: "Flexible", color: "bg-purple-100 text-purple-700 border-purple-200", icon: <Clock className="h-3.5 w-3.5" /> },
+  FLEX: { label: "Flexible", color: "bg-[#f6e6ee] text-[#8c2f52] border-[#ecccda]", icon: <Clock className="h-3.5 w-3.5" /> },
 };
 
 type PermState = "unknown" | "granted" | "denied" | "prompt";
@@ -77,6 +89,8 @@ function PunchPage() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [empConfig, setEmpConfig] = useState<EmployeeConfig | null>(null);
+  const [office, setOffice] = useState<{ lat: number; lng: number; radius: number } | null>(null);
+  const [shiftStart, setShiftStart] = useState("09:30");
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
@@ -89,17 +103,22 @@ function PunchPage() {
     (async () => {
       const fp = await getDeviceFingerprint();
       setFingerprint(fp);
-      const status = await getDeviceStatusFn({ data: { userId: user.id, fingerprint: fp } });
+      const status = await getDeviceStatusFn({ data: { fingerprint: fp } });
       setDeviceKind(status.kind);
 
-      const [events, cfg, s] = await Promise.all([
-        getTodayEventsFn({ data: user.id }),
-        getEmployeeConfigFn({ data: user.id }),
-        getAttendanceStatsFn({ data: user.id }),
+      const [events, cfg, s, company] = await Promise.all([
+        getTodayEventsFn(),
+        getEmployeeConfigFn(),
+        getAttendanceStatsFn(),
+        getCompanyConfigFn().catch(() => null),
       ]);
       setStats(s);
       if (cfg) setEmpConfig(cfg);
       setTodayEvents(events);
+      if (company && company.office_lat != null && company.office_lng != null) {
+        setOffice({ lat: company.office_lat, lng: company.office_lng, radius: company.office_radius_m ?? 2000 });
+      }
+      if (company?.shift_start) setShiftStart(company.shift_start);
       if (cfg) {
         const dayKey = DAY_KEYS[new Date().getDay()];
         setScheduleType((cfg.weekly_schedule[dayKey] as string) ?? "WFO");
@@ -166,7 +185,6 @@ function PunchPage() {
 
       setStatusLine("Submitting punch…");
       const result = await submitPunchFn({ data: {
-        user_id: user.id,
         event_type: eventType,
         lat: pos?.coords.latitude ?? null,
         lng: pos?.coords.longitude ?? null,
@@ -179,7 +197,7 @@ function PunchPage() {
         const geo = result.geofence.replace("inside_", "");
         setLastPunch({ type: eventType, time: new Date(result.event.ts_utc).toLocaleTimeString(), geo });
         setTodayEvents((prev) => [...prev, result.event]);
-        getAttendanceStatsFn({ data: user.id }).then(setStats);
+        getAttendanceStatsFn().then(setStats);
         // Update location preview with actual geo from punch
         if (pos) {
           setLocationPreview({
@@ -232,238 +250,257 @@ function PunchPage() {
   const workHrs = Math.floor(workingMins / 60);
   const workMin = Math.floor(workingMins % 60);
 
+  const firstName = user.user_metadata.full_name.split(" ")[0];
+  const initials = user.user_metadata.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  // Date card bits
+  const dayNum = now.getDate();
+  const weekdayShort = now.toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+  const weekdayLong = now.toLocaleDateString("en-IN", { weekday: "long" });
+  const monthYear = now.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+  const dailyMessage = DAILY_MESSAGES[dayOfYear % DAILY_MESSAGES.length];
+
+  // Today's first-in / last-out for the punch block summary
+  const firstInToday = todayEvents.find((e) => e.event_type === "punch_in");
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const isWorkingDay = scheduleType !== "OFF";
+
   return (
     <div className="space-y-4">
-      {/* Date + schedule badge */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* Greeting + avatar */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+          style={{ background: "linear-gradient(135deg,#8c2f52,#b8456e)" }}>
+          {initials}
+        </div>
         <div>
-          <h1 className="text-lg font-bold text-foreground">
-            {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-          </h1>
-          <p className="text-sm text-muted-foreground">{user.user_metadata.full_name}</p>
+          <div className="text-base font-bold text-foreground leading-tight">Hi, {firstName} 👋</div>
+          <div className="text-xs text-muted-foreground">{greeting}</div>
         </div>
-        <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${scheduleMeta.color}`}>
-          {scheduleMeta.icon}
+      </div>
+
+      {/* Date + dynamic daily message */}
+      <div className="flex items-center gap-4 rounded-2xl border border-border bg-white p-4 shadow-sm">
+        <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl text-white shadow-sm"
+          style={{ background: "linear-gradient(135deg,#8c2f52,#b8456e)" }}>
+          <span className="text-2xl font-extrabold leading-none">{dayNum}</span>
+          <span className="mt-0.5 text-[10px] font-semibold tracking-widest">{weekdayShort}</span>
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground">{monthYear}, {weekdayLong}</div>
+          <div className="text-lg font-bold text-foreground">{shiftStart} <span className="text-xs font-medium text-muted-foreground">shift start</span></div>
+          <div className="text-sm font-semibold text-[#8c2f52]">{dailyMessage}</div>
+        </div>
+      </div>
+
+      {/* Today's status */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-sm font-bold text-foreground">Today's Status</span>
+        <span className={`flex items-center gap-1.5 text-sm font-semibold ${isWorkingDay ? "text-green-700" : "text-gray-400"}`}>
+          <span className={`h-2 w-2 rounded-full ${isWorkingDay ? "bg-green-500" : "bg-gray-300"}`} />
           {scheduleMeta.label}
+        </span>
+      </div>
+
+      {/* ── Yellow punch block ── */}
+      <div className="rounded-2xl border border-[#f0e2bd] bg-[#fdf3d4] p-4 sm:p-5 space-y-3">
+        <div className="text-center text-4xl font-mono font-bold tabular-nums text-[#8c2f52]">
+          {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </div>
-      </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Streak" value={stats ? `${stats.streak}` : "—"} sub="consecutive days" icon="🔥" color="text-orange-600" bg="bg-orange-50 border-orange-100" />
-        <StatCard label="Present" value={stats ? `${stats.presentThisMonth}` : "—"} sub="days this month" icon="✅" color="text-green-600" bg="bg-green-50 border-green-100" />
-        <StatCard label="Late Remarks" value={stats ? `${stats.lateThisMonth}` : "—"} sub="after 9:30 AM" icon="⏰"
-          color={stats && stats.lateThisMonth > 2 ? "text-red-600" : "text-amber-600"}
-          bg={stats && stats.lateThisMonth > 2 ? "bg-red-50 border-red-100" : "bg-amber-50 border-amber-100"} />
-        <StatCard label="Today" value={workingMins > 0 ? `${workHrs}h ${workMin}m` : "0h 0m"} sub="hours logged" icon="🕐" color="text-blue-600" bg="bg-blue-50 border-blue-100" />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr,300px]">
-        {/* ── Main punch card ── */}
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-white shadow-sm border border-border overflow-hidden">
-            {/* Gradient clock header */}
-            <div className="bg-brand px-5 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-3xl sm:text-4xl font-mono font-bold tracking-tight tabular-nums">
-                    {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPunchedIn ? "bg-green-500/30 text-green-100" : "bg-white/15 text-white/60"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${isPunchedIn ? "bg-green-300 animate-pulse" : "bg-white/40"}`} />
-                      {isPunchedIn ? `In since ${new Date(lastIn!.ts_utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Not punched in"}
-                    </span>
-                    {workingMins > 0 && <span className="text-xs text-white/60">⏱ {workHrs}h {workMin}m</span>}
-                  </div>
-                </div>
-                <div className="text-right text-white/50 text-xs hidden sm:block">
-                  {todayEvents.length} event{todayEvents.length !== 1 ? "s" : ""} today
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 sm:p-5 space-y-3">
-              {/* Warnings */}
-              {scheduleType === "OFF" && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">Non-working day — punch disabled.</div>
-              )}
-
-              {scheduleType === "WFH" && (
-                <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
-                  <Home className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                  WFH day — punch is valid within 100km of office. Location will be verified on punch.
-                </div>
-              )}
-
-              {/* Punch buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  disabled={busy || scheduleType === "OFF"}
-                  onClick={() => doPunch("punch_in")}
-                  className="group flex flex-col items-center justify-center rounded-2xl border-2 border-green-200 bg-green-50 py-7 transition-all hover:border-green-400 hover:bg-green-100 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {busy ? <Loader2 className="h-7 w-7 animate-spin text-green-600" /> : <LogIn className="h-7 w-7 text-green-600 group-hover:scale-110 transition-transform" />}
-                  <span className="mt-2 text-sm font-bold text-green-700">Punch In</span>
-                  {lastIn && !isPunchedIn && <span className="mt-0.5 text-[10px] text-green-600/60">Last: {new Date(lastIn.ts_utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
-                </button>
-                <button
-                  disabled={busy || !isPunchedIn || scheduleType === "OFF"}
-                  onClick={() => doPunch("punch_out")}
-                  className="group flex flex-col items-center justify-center rounded-2xl border-2 border-red-200 bg-red-50 py-7 transition-all hover:border-red-400 hover:bg-red-100 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {busy ? <Loader2 className="h-7 w-7 animate-spin text-red-500" /> : <LogOut className="h-7 w-7 text-red-500 group-hover:scale-110 transition-transform" />}
-                  <span className="mt-2 text-sm font-bold text-red-600">Punch Out</span>
-                  {lastOut && <span className="mt-0.5 text-[10px] text-red-500/60">Last: {new Date(lastOut.ts_utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
-                </button>
-              </div>
-
-              {busy && statusLine && (
-                <div className="flex items-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />{statusLine}
-                </div>
-              )}
-
-              {lastPunch && (
-                <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />
-                  <div>
-                    <div className="font-semibold text-green-800 text-sm">{lastPunch.type === "punch_in" ? "Punched In" : "Punched Out"} at {lastPunch.time}</div>
-                    <div className="text-xs text-green-700 capitalize">{lastPunch.geo.replace(/_/g, " ")}</div>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
-                  <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
-                  <div>
-                    <div className="font-semibold text-red-800 text-sm">Punch Failed</div>
-                    <div className="text-xs text-red-700 mt-0.5">{error}</div>
-                  </div>
-                </div>
-              )}
-            </div>
+        {/* In / Out summary */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white/70 px-3 py-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Punch In</div>
+            <div className="text-base font-bold text-foreground">{firstInToday ? fmtTime(firstInToday.ts_utc) : "--:--"}</div>
           </div>
+          <div className="rounded-xl bg-white/70 px-3 py-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Punch Out</div>
+            <div className="text-base font-bold text-foreground">{lastOut ? fmtTime(lastOut.ts_utc) : "--:--"}</div>
+          </div>
+        </div>
 
-          {/* Today's timeline */}
-          {todayEvents.length > 0 && (
-            <div className="rounded-2xl bg-white border border-border shadow-sm p-4 sm:p-5">
-              <h3 className="font-semibold text-sm text-foreground mb-4">Today's Log</h3>
-              <div className="space-y-0">
-                {todayEvents.map((e, i) => {
-                  const isIn = e.event_type === "punch_in";
-                  const hasFlag = e.anomaly_flags.length > 0;
-                  return (
-                    <div key={e.id} className="flex items-start gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 ${isIn ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
-                          {isIn ? <LogIn className="h-3.5 w-3.5 text-green-600" /> : <LogOut className="h-3.5 w-3.5 text-red-500" />}
-                        </div>
-                        {i < todayEvents.length - 1 && <div className="w-px flex-1 bg-border my-1 min-h-[16px]" />}
-                      </div>
-                      <div className="pb-3 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm font-semibold ${isIn ? "text-green-700" : "text-red-600"}`}>{isIn ? "Punch In" : "Punch Out"}</span>
-                          <span className="text-xs text-muted-foreground">{new Date(e.ts_utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                          {hasFlag && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">⚠ flagged</Badge>}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          {e.geofence_status && (
-                            <span className={`flex items-center gap-1 ${e.geofence_status.includes("office") ? "text-blue-600" : e.geofence_status.includes("home") ? "text-green-600" : e.geofence_status === "outside" ? "text-red-500" : ""}`}>
-                              <MapPin className="h-3 w-3" />{e.geofence_status.replace("inside_", "").replace("_", " ")}
-                            </span>
-                          )}
-                          {e.accuracy_m && <span>±{Math.round(e.accuracy_m)}m</span>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+        {/* Warnings */}
+        {scheduleType === "OFF" && (
+          <div className="rounded-xl border border-gray-200 bg-white/70 p-3 text-sm text-gray-600">Non-working day — punch disabled.</div>
+        )}
+        {scheduleType === "WFH" && (
+          <div className="flex items-center gap-2 rounded-xl border border-[#f0e2bd] bg-white/70 px-3 py-2 text-xs text-[#8a6d2a]">
+            <Home className="h-3.5 w-3.5 shrink-0" />
+            WFH day — valid within 100km of office. Location verified on punch.
+          </div>
+        )}
+
+        {/* Swipe to punch */}
+        <div className="space-y-2">
+          {!isPunchedIn ? (
+            <SwipeToPunch direction="in" busy={busy} disabled={scheduleType === "OFF"} onComplete={() => doPunch("punch_in")} />
+          ) : (
+            <SwipeToPunch direction="out" busy={busy} disabled={scheduleType === "OFF"} onComplete={() => doPunch("punch_out")} />
           )}
         </div>
 
-        {/* ── Right sidebar ── */}
-        <div className="space-y-4">
-          {/* Location preview */}
-          <div className="rounded-2xl bg-white border border-border shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm">My Location</h3>
-              <button onClick={previewLocation} disabled={locFetching || perm === "denied"}
-                className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
-                {locFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Navigation className="h-3 w-3" />}
-                {locFetching ? "Getting…" : "Refresh"}
-              </button>
+        {busy && statusLine && (
+          <div className="flex items-center gap-2 rounded-lg bg-white/70 px-4 py-2.5 text-sm text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />{statusLine}
+          </div>
+        )}
+        {error && (
+          <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
+            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+            <div>
+              <div className="font-semibold text-red-800 text-sm">Punch Failed</div>
+              <div className="text-xs text-red-700 mt-0.5">{error}</div>
             </div>
-            {perm === "denied" ? (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
-                <div><div className="font-semibold">Location blocked</div><div className="mt-0.5 text-amber-700">Enable location for geofence verification.</div></div>
+          </div>
+        )}
+      </div>
+
+      {/* My Location */}
+      <div className="rounded-2xl bg-white border border-border shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm">My Location</h3>
+          <button onClick={previewLocation} disabled={locFetching || perm === "denied"}
+            className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
+            {locFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Navigation className="h-3 w-3" />}
+            {locFetching ? "Getting…" : "Refresh"}
+          </button>
+        </div>
+        {perm === "denied" ? (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+            <div><div className="font-semibold">Location blocked</div><div className="mt-0.5 text-amber-700">Enable location for geofence verification.</div></div>
+          </div>
+        ) : locationPreview ? (
+          <div className="space-y-2">
+            <GeofenceMap
+              current={{ lat: locationPreview.lat, lng: locationPreview.lng, accuracy: locationPreview.accuracy }}
+              office={office}
+              home={empConfig?.home_lat != null && empConfig?.home_lng != null
+                ? { lat: empConfig.home_lat, lng: empConfig.home_lng, radius: empConfig.home_radius_m ?? 200 }
+                : null}
+              className="h-56 w-full rounded-xl overflow-hidden border border-border z-0"
+            />
+            <div className="rounded-xl bg-muted/40 p-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><div className="text-muted-foreground">Lat</div><div className="font-mono font-semibold">{locationPreview.lat.toFixed(5)}</div></div>
+                <div><div className="text-muted-foreground">Lng</div><div className="font-mono font-semibold">{locationPreview.lng.toFixed(5)}</div></div>
               </div>
-            ) : locationPreview ? (
-              <div className="space-y-2">
-                <div className="rounded-xl bg-[#f0f4f8] p-3">
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><div className="text-muted-foreground">Lat</div><div className="font-mono font-semibold">{locationPreview.lat.toFixed(5)}</div></div>
-                    <div><div className="text-muted-foreground">Lng</div><div className="font-mono font-semibold">{locationPreview.lng.toFixed(5)}</div></div>
-                  </div>
-                  <div className="mt-1.5 text-[10px] text-muted-foreground">±{Math.round(locationPreview.accuracy)}m accuracy</div>
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs font-medium ${locationPreview.geofenceColor}`}>
-                  <MapPin className="h-3 w-3" />{locationPreview.geofenceLabel}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2 rounded-xl bg-[#f0f4f8] py-5 text-center">
-                <MapPin className="h-6 w-6 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">Click Refresh to see your GPS</p>
-              </div>
+              <div className="mt-1.5 text-[10px] text-muted-foreground">±{Math.round(locationPreview.accuracy)}m accuracy</div>
+            </div>
+            <div className={`flex items-center gap-1.5 text-xs font-medium ${locationPreview.geofenceColor}`}>
+              <MapPin className="h-3 w-3" />{locationPreview.geofenceLabel}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {office && (
+              <GeofenceMap
+                current={null}
+                office={office}
+                home={empConfig?.home_lat != null && empConfig?.home_lng != null
+                  ? { lat: empConfig.home_lat, lng: empConfig.home_lng, radius: empConfig.home_radius_m ?? 200 }
+                  : null}
+                className="h-56 w-full rounded-xl overflow-hidden border border-border z-0"
+              />
             )}
-          </div>
-
-          {/* This week */}
-          <ThisWeek empConfig={empConfig} todayEvents={todayEvents} />
-
-          {/* Quick links */}
-          <div className="rounded-2xl bg-white border border-border shadow-sm p-4">
-            <h3 className="font-semibold text-sm mb-3">Quick Links</h3>
-            <div className="space-y-1.5">
-              <Link to="/leaves" search={{ tab: "apply" }}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors">
-                <span className="text-base">🌂</span>Apply Leave
-              </Link>
-              <Link to="/leaves" search={{ tab: "balances" }}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors">
-                <span className="text-base">📊</span>Leave Balances
-              </Link>
-              <Link to="/history"
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors">
-                <span className="text-base">📋</span>Attendance Logs
-              </Link>
-              <Link to="/settings"
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors">
-                <span className="text-base">⚙️</span>Settings & Setup
-              </Link>
+            <div className="flex flex-col items-center gap-2 rounded-xl bg-muted/40 py-5 text-center">
+              <MapPin className="h-6 w-6 text-muted-foreground/30" />
+              <p className="text-xs text-muted-foreground">Click Refresh to see your live position on the map</p>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* This week */}
+      <ThisWeek empConfig={empConfig} todayEvents={todayEvents} />
+
+      {/* Today's Log */}
+      {todayEvents.length > 0 && (
+        <div className="rounded-2xl bg-white border border-border shadow-sm p-4 sm:p-5">
+          <h3 className="font-semibold text-sm text-foreground mb-4">Today's Log</h3>
+          <div className="space-y-0">
+            {todayEvents.map((e, i) => {
+              const isIn = e.event_type === "punch_in";
+              const hasFlag = e.anomaly_flags.length > 0;
+              return (
+                <div key={e.id} className="flex items-start gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 ${isIn ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+                      {isIn ? <LogIn className="h-3.5 w-3.5 text-green-600" /> : <LogOut className="h-3.5 w-3.5 text-red-500" />}
+                    </div>
+                    {i < todayEvents.length - 1 && <div className="w-px flex-1 bg-border my-1 min-h-[16px]" />}
+                  </div>
+                  <div className="pb-3 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-sm font-semibold ${isIn ? "text-green-700" : "text-red-600"}`}>{isIn ? "Punch In" : "Punch Out"}</span>
+                      <span className="text-xs text-muted-foreground">{new Date(e.ts_utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                      {hasFlag && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">⚠ flagged</Badge>}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      {e.geofence_status && (
+                        <span className={`flex items-center gap-1 ${e.geofence_status.includes("office") ? "text-blue-600" : e.geofence_status.includes("home") ? "text-green-600" : e.geofence_status === "outside" ? "text-red-500" : ""}`}>
+                          <MapPin className="h-3 w-3" />{e.geofence_status.replace("inside_", "").replace("_", " ")}
+                        </span>
+                      )}
+                      {e.accuracy_m && <span>±{Math.round(e.accuracy_m)}m</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Stat cards — yellow + burgundy only */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Streak" value={stats ? `${stats.streak}` : "—"} sub="consecutive days" icon={<Flame className="h-4 w-4" />} chip="bg-[#fdf3d4] text-[#b8860b]" />
+        <StatCard label="Present" value={stats ? `${stats.presentThisMonth}` : "—"} sub="days this month" icon={<CalendarCheck className="h-4 w-4" />} chip="bg-[#f6e6ee] text-[#8c2f52]" />
+        <StatCard label="Late Remarks" value={stats ? `${stats.lateThisMonth}` : "—"} sub="after 9:30 AM" icon={<AlarmClock className="h-4 w-4" />} chip="bg-[#fdf3d4] text-[#b8860b]" />
+        <StatCard label="Today" value={workingMins > 0 ? `${workHrs}h ${workMin}m` : "0h 0m"} sub="hours logged" icon={<Timer className="h-4 w-4" />} chip="bg-[#f6e6ee] text-[#8c2f52]" />
+      </div>
+
+      {/* Quick links — icon tiles */}
+      <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+        <h3 className="mb-3 text-sm font-semibold">Quick Links</h3>
+        <div className="grid grid-cols-4 gap-2">
+          <QuickLink to="/leaves" search={{ tab: "apply" }} emoji="🌂" label="Apply Leave" />
+          <QuickLink to="/leaves" search={{ tab: "balances" }} emoji="📊" label="Balances" />
+          <QuickLink to="/history" emoji="📋" label="Logs" />
+          <QuickLink to="/settings" emoji="⚙️" label="Settings" />
         </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, sub, icon, color, bg }: {
-  label: string; value: string; sub: string; icon: string; color: string; bg: string;
+function QuickLink({ to, search, emoji, label }: { to: string; search?: Record<string, string>; emoji: string; label: string }) {
+  return (
+    <Link
+      to={to as "/leaves" | "/history" | "/settings"}
+      search={search as any}
+      className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-white px-2 py-3 text-center transition-colors hover:bg-[#fdf3d4]"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fdf3d4] text-lg">{emoji}</span>
+      <span className="text-[11px] font-medium text-foreground leading-tight">{label}</span>
+    </Link>
+  );
+}
+
+function StatCard({ label, value, sub, icon, chip }: {
+  label: string; value: string; sub: string; icon: React.ReactNode; chip: string;
 }) {
   return (
-    <div className={`rounded-xl border p-4 ${bg}`}>
-      <div className="flex items-start justify-between">
+    <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${chip}`}>{icon}</div>
         <div className="text-xs font-medium text-muted-foreground leading-tight">{label}</div>
-        <span className="text-lg">{icon}</span>
       </div>
-      <div className={`mt-2 text-2xl font-bold ${color}`}>{value}</div>
+      <div className="mt-2.5 text-2xl font-bold text-[#8c2f52]">{value}</div>
       <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
     </div>
   );
@@ -489,11 +526,11 @@ function Check({ icon, label, value, ok, warn }: {
 const WEEK_DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 const WEEK_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const SCHED_PASTEL: Record<string, { bg: string; text: string; dot: string; ring: string }> = {
-  WFO:  { bg: "bg-blue-50 border border-blue-100",     text: "text-blue-700",   dot: "bg-blue-400",   ring: "ring-blue-300" },
-  WFH:  { bg: "bg-green-50 border border-green-100",   text: "text-green-700",  dot: "bg-green-400",  ring: "ring-green-300" },
-  OFF:  { bg: "bg-gray-50 border border-gray-100",     text: "text-gray-400",   dot: "bg-gray-200",   ring: "ring-gray-200" },
-  FLEX: { bg: "bg-purple-50 border border-purple-100", text: "text-purple-700", dot: "bg-purple-400", ring: "ring-purple-300" },
+const SCHED_PASTEL: Record<string, { bg: string; text: string; dot: string }> = {
+  WFO:  { bg: "bg-white border border-border",          text: "text-[#8c2f52]", dot: "bg-[#8c2f52]" },
+  WFH:  { bg: "bg-[#fdf3d4] border border-[#f0e2bd]",   text: "text-[#9a7416]", dot: "bg-[#d99b25]" },
+  OFF:  { bg: "bg-gray-50 border border-gray-100",      text: "text-gray-400",  dot: "bg-gray-300" },
+  FLEX: { bg: "bg-[#f6e6ee] border border-[#ecccda]",   text: "text-[#b8456e]", dot: "bg-[#b8456e]" },
 };
 
 function ThisWeek({ empConfig, todayEvents }: { empConfig: EmployeeConfig | null; todayEvents: AttendanceEvent[] }) {
@@ -513,27 +550,26 @@ function ThisWeek({ empConfig, todayEvents }: { empConfig: EmployeeConfig | null
           const hasPunch = isToday && todayEvents.length > 0;
           return (
             <div key={key} className={`flex flex-col items-center gap-1 rounded-xl py-2.5 transition-colors ${style.bg}
-              ${isToday ? `ring-2 ${style.ring} shadow-sm` : ""} ${isPast ? "opacity-60" : ""}`}>
-              <div className={`text-[9px] font-bold uppercase ${style.text}`}>
+              ${isToday ? "ring-2 ring-[#8c2f52]/40 shadow-sm" : ""} ${isPast ? "opacity-70" : ""}`}>
+              <div className={`text-[10px] font-bold uppercase ${style.text}`}>
                 {WEEK_DAY_LABELS[i].slice(0, 1)}
               </div>
-              <div className={`h-2 w-2 rounded-full ${hasPunch ? "bg-green-500" : style.dot}`} />
-              <div className={`text-[8px] font-bold uppercase ${style.text}`}>
+              <div className={`h-2 w-2 rounded-full ${hasPunch ? "bg-green-600" : style.dot}`} />
+              <div className={`text-[9px] font-semibold uppercase ${style.text}`}>
                 {sched === "OFF" ? "—" : sched}
               </div>
-              {isToday && <div className={`text-[7px] font-bold ${style.text} opacity-70`}>Today</div>}
+              {isToday && <div className="text-[8px] font-bold text-[#8c2f52]">Today</div>}
             </div>
           );
         })}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2.5">
+      <div className="mt-3 flex flex-wrap gap-3">
         {[
-          { dot: "bg-green-500", label: "Punched" },
-          { dot: "bg-blue-400", label: "WFO" },
-          { dot: "bg-green-400", label: "WFH" },
-          { dot: "bg-purple-400", label: "FLEX" },
+          { dot: "bg-green-600", label: "Punched" },
+          { dot: "bg-[#8c2f52]", label: "WFO" },
+          { dot: "bg-[#d99b25]", label: "WFH" },
         ].map((l) => (
-          <div key={l.label} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <div key={l.label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <div className={`h-1.5 w-1.5 rounded-full ${l.dot}`} />
             {l.label}
           </div>

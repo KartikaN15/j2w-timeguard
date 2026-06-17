@@ -1,32 +1,32 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Dependencies
+node_modules/
 
-node_modules
-dist
-dist-ssr
-.output
-.vinxi
-.tanstack/**
-.nitro
-*.local
+# Build output
+dist/
+dist-ssr/
+.output/
+.tanstack/
+.nitro/
+.vinxi/
 
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
+# Generated route tree
+frontend/src/routeTree.gen.ts
 
-# Editor directories and files
+# Env files (never commit secrets)
+.env
+.env.*
+!.env.*.example
+backend/.env
+frontend/.env
+
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
+
+# Logs
+*.log
+npm-debug.log*
+j2w-images.tar.gz

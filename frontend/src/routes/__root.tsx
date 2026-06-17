@@ -5,12 +5,9 @@ import {
   createRootRouteWithContext,
   useRouter,
   useRouterState,
-  HeadContent,
-  Scripts,
 } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
-import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { Toaster } from "@/components/ui/sonner";
@@ -23,7 +20,7 @@ import {
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#f6f5f3] px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold">Page not found</h2>
@@ -42,7 +39,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#f6f5f3] px-4">
       <div className="max-w-md text-center space-y-4">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
         <p className="text-sm text-muted-foreground">{error.message}</p>
@@ -56,28 +53,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "J2W Attendance" },
-    ],
-    links: [{ rel: "stylesheet", href: appCss }],
-  }),
-  shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
-
-function RootShell({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en">
-      <head><HeadContent /></head>
-      <body>{children}<Scripts /></body>
-    </html>
-  );
-}
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
@@ -102,25 +81,16 @@ function AppShell() {
     return <Outlet />;
   }
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9]">
+    return <div className="flex min-h-screen items-center justify-center bg-[#f6f5f3]">
       <div className="h-7 w-7 rounded-full border-4 border-primary border-t-transparent animate-spin" />
     </div>;
   }
 
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f4f6f9]">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* ── Sidebar ── */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-white border-r border-border shadow-sm
-        transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shrink-0
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-      `}>
+    <div className="flex h-screen overflow-hidden bg-[#f6f5f3]">
+      {/* ── Sidebar (desktop only) ── */}
+      <aside className="hidden lg:flex w-60 flex-col bg-white border-r border-border shadow-sm lg:sticky lg:top-0 lg:h-screen lg:shrink-0">
         {/* Logo */}
         <div className="relative flex items-center justify-center border-b border-border px-4 py-4 shrink-0">
           <img src="/logo.png" alt="Joules to Watts" className="h-12 w-full max-w-[150px] object-contain"
@@ -146,7 +116,7 @@ function AppShell() {
           <div className="border-b border-border px-4 py-3 shrink-0">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+                style={{ background: "linear-gradient(135deg,#8c2f52,#b8456e)" }}>
                 {user.user_metadata.full_name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -202,22 +172,52 @@ function AppShell() {
 
       {/* ── Main content (scrollable) ── */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        {/* Mobile-only top bar */}
-        <header className="lg:hidden shrink-0 flex h-14 items-center gap-3 border-b border-border bg-white px-4">
-          <button onClick={() => setSidebarOpen(true)}
-            className="rounded-lg p-1.5 hover:bg-muted/50 text-muted-foreground">
-            <Menu className="h-5 w-5" />
-          </button>
-          <img src="/logo.png" alt="J2W" className="h-7 w-auto object-contain"
-            onError={(e) => { e.currentTarget.style.display = "none"; }} />
-        </header>
-
-        {/* Scrollable page content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {/* Scrollable page content (extra bottom padding on mobile for the tab bar) */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6 pb-24 lg:pb-6">
           <Outlet />
         </main>
       </div>
+
+      {/* ── Bottom tab bar (mobile only) ── */}
+      <BottomNav isAdmin={isAdmin} />
     </div>
+  );
+}
+
+// ── Bottom tab bar (mobile) ───────────────────────────────────────────────────
+
+function BottomNav({ isAdmin }: { isAdmin: boolean }) {
+  const items = isAdmin
+    ? [
+        { to: "/admin/live", icon: Activity, label: "Home", exact: false },
+        { to: "/admin/users", icon: Users, label: "Users", exact: false },
+        { to: "/admin/leaves", icon: CheckSquare, label: "Leaves", exact: false },
+        { to: "/admin/devices", icon: Smartphone, label: "Devices", exact: false },
+      ]
+    : [
+        { to: "/", icon: LayoutDashboard, label: "Home", exact: true },
+        { to: "/leaves", icon: Umbrella, label: "Leave", exact: false },
+        { to: "/history", icon: History, label: "Logs", exact: false },
+        { to: "/settings", icon: Settings, label: "Settings", exact: false },
+      ];
+
+  return (
+    <nav className="lg:hidden fixed inset-x-0 bottom-0 z-50 border-t border-border bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_20px_-8px_rgba(140,47,82,0.15)]">
+      <div className="flex items-stretch justify-around px-1.5 py-1.5">
+        {items.map((it) => (
+          <Link
+            key={it.to}
+            to={it.to}
+            activeOptions={{ exact: it.exact }}
+            className="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] font-medium text-muted-foreground transition-colors"
+            activeProps={{ className: "flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] font-semibold text-primary bg-primary/10" }}
+          >
+            <it.icon className="h-5 w-5" />
+            {it.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
   );
 }
 

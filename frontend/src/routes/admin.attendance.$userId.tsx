@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getMonthAttendanceFn, getEmployeeConfigFn } from "@/backend/server-fns";
-import type { DayRecord } from "@/backend/punch.api";
-import { getUserById } from "@/backend/auth.api";
+import { getMonthAttendanceFn } from "@/backend/server-fns";
+import type { DayRecord } from "@/backend/server-fns";
 import { ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/admin/attendance/$userId")({
@@ -23,8 +22,8 @@ function AttendanceCalendar() {
   const [stdHours, setStdHours] = useState(9);
 
   useEffect(() => {
-    const u = getUserById(userId);
-    setEmpName(u?.user_metadata.full_name ?? userId);
+    // userId is shown as fallback; full name is loaded once records arrive
+    setEmpName(userId);
   }, [userId]);
 
   useEffect(() => {

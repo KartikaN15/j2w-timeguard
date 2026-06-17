@@ -2,17 +2,18 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
-  getPendingDevices,
-  getApprovedDevices,
-  approveDevice,
-  rejectDevice,
-  revokeDevice,
-  type PendingDeviceRow,
-  type ApprovedDeviceRow,
-} from "@/backend/devices.api";
+  getPendingDevicesFn,
+  getApprovedDevicesFn,
+  approveDeviceFn,
+  rejectDeviceFn,
+  revokeDeviceFn,
+} from "@/backend/server-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
+type PendingDeviceRow = { id: string; user_id: string; fingerprint: string; user_agent: string | null; requested_at: string; employee_name: string; email: string }
+type ApprovedDeviceRow = { id: string; user_id: string; fingerprint: string; label: string | null; user_agent: string | null; approved_at: string; approved_by: string | null; created_at: string; employee_name: string; email: string }
 import {
   Table,
   TableBody,
@@ -34,30 +35,29 @@ function AdminDevices() {
   const [approved, setApproved] = useState<ApprovedDeviceRow[]>([]);
 
   async function load() {
-    const [p, a] = await Promise.all([getPendingDevices(), getApprovedDevices()]);
-    setPending(p);
-    setApproved(a);
+    const [p, a] = await Promise.all([getPendingDevicesFn(), getApprovedDevicesFn()]);
+    setPending(p as unknown as PendingDeviceRow[]);
+    setApproved(a as unknown as ApprovedDeviceRow[]);
   }
 
   useEffect(() => { load(); }, []);
 
   async function onApprove(row: PendingDeviceRow) {
-    if (!user) return;
-    const res = await approveDevice(row.id, user.id);
+    const res = await approveDeviceFn({ data: { pendingId: row.id } });
     if (res.ok) { toast.success("Device approved."); load(); }
     else toast.error(res.reason);
   }
 
   async function onReject(row: PendingDeviceRow) {
-    if (!user || !confirm("Reject and remove this device request?")) return;
-    await rejectDevice(row.id, user.id);
+    if (!confirm("Reject and remove this device request?")) return;
+    await rejectDeviceFn({ data: { pendingId: row.id } });
     toast.success("Device request rejected.");
     load();
   }
 
   async function onRevoke(row: ApprovedDeviceRow) {
-    if (!user || !confirm("Revoke this device? The employee will not be able to punch in until re-approved.")) return;
-    await revokeDevice(row.id, user.id);
+    if (!confirm("Revoke this device? The employee will not be able to punch in until re-approved.")) return;
+    await revokeDeviceFn({ data: { deviceId: row.id } });
     toast.success("Device revoked.");
     load();
   }

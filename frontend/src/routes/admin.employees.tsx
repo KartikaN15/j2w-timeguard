@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { expandMapUrl } from "@/lib/maps.functions";
 import { useEffect, useState } from "react";
-import { getEmployees, updateEmployeeConfig, getCompanyConfig, updateCompanyConfig, type EmployeeRow } from "@/backend/employees.api";
-import type { CompanyConfig, EmployeeConfig } from "@/backend/mock-db";
+import {
+  getEmployeeListFn, updateEmployeeConfigFn, getCompanyConfigFn, updateCompanyConfigFn,
+  type EmployeeConfig,
+} from "@/backend/server-fns";
+
+type CompanyConfig = { id: number; office_name: string; office_lat: number | null; office_lng: number | null; office_radius_m: number; shift_start: string; shift_end?: string; late_threshold_min: number; updated_at: string }
+type EmployeeRow = { id: string; full_name: string | null; email: string | null; client_company: string | null; roles: string[]; config: EmployeeConfig | null }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,9 +41,10 @@ function AdminEmployees() {
   const [addrResults, setAddrResults] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
 
   useEffect(() => {
-    getEmployees().then(setRows);
-    getCompanyConfig().then((cfg) => {
-      setCompanyCfg(cfg);
+    getEmployeeListFn().then((data) => setRows(data as unknown as EmployeeRow[]));
+    getCompanyConfigFn().then((cfg) => {
+      if (!cfg) return;
+      setCompanyCfg(cfg as CompanyConfig);
       setOfficeForm({ name: cfg.office_name, lat: cfg.office_lat?.toString() ?? "", lng: cfg.office_lng?.toString() ?? "", radius: String(cfg.office_radius_m) });
     });
   }, []);
@@ -145,14 +151,14 @@ function AdminEmployees() {
   }
 
   async function saveOffice() {
-    await updateCompanyConfig({
+    await updateCompanyConfigFn({ data: {
       office_name: officeForm.name || companyCfg?.office_name,
       office_lat: officeForm.lat ? Number(officeForm.lat) : null,
       office_lng: officeForm.lng ? Number(officeForm.lng) : null,
-      office_radius_m: Number(officeForm.radius) || 200,
-    });
-    const updated = await getCompanyConfig();
-    setCompanyCfg(updated);
+      office_radius_m: Number(officeForm.radius) || 2000,
+    }});
+    const updated = await getCompanyConfigFn();
+    if (updated) setCompanyCfg(updated as CompanyConfig);
     setOfficeEdit(false);
     toast.success("Office location saved. All employees will use this for WFO geofence.");
   }
@@ -212,14 +218,14 @@ function AdminEmployees() {
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((r) => (
-                <tr key={r.user_id} className="hover:bg-muted/20">
+                <tr key={r.id} className="hover:bg-muted/20">
                   <td className="px-4 py-3">
-                    <div className="font-medium">{r.full_name}</div>
-                    <div className="text-xs text-muted-foreground">{r.email}</div>
+                    <div className="font-medium">{r.full_name ?? '—'}</div>
+                    <div className="text-xs text-muted-foreground">{r.email ?? '—'}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{r.client_company}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{r.client_company ?? '—'}</td>
                   <td className="px-4 py-3">
-                    {r.config.home_lat != null ? (
+                    {r.config?.home_lat != null ? (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Home className="h-3.5 w-3.5 text-green-600 shrink-0" />
                         <span className="font-mono">{r.config.home_lat.toFixed(4)}, {r.config.home_lng?.toFixed(4)}</span>
@@ -232,7 +238,7 @@ function AdminEmployees() {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {DAY_LABELS.filter(d => !["sat", "sun"].includes(d)).map((d) => {
-                        const val = r.config.weekly_schedule[d] ?? "WFO";
+                        const val = (r.config?.weekly_schedule ?? {})[d] ?? "WFO";
                         return (
                           <Badge key={d} className={
                             val === "WFO" ? "bg-blue-100 text-blue-700 text-[10px]"
@@ -248,7 +254,7 @@ function AdminEmployees() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setEditing(r)}>Edit</Button>
-                      <Link to="/admin/attendance/$userId" params={{ userId: r.user_id }}
+                      <Link to="/admin/attendance/$userId" params={{ userId: r.id }}
                         className="flex items-center gap-1 text-xs text-primary hover:underline">
                         Logs <ExternalLink className="h-3 w-3" />
                       </Link>
@@ -367,7 +373,7 @@ function AdminEmployees() {
           <EditDialog
             row={editing}
             onClose={() => setEditing(null)}
-            onSaved={() => { setEditing(null); getEmployees().then(setRows); }}
+            onSaved={() => { setEditing(null); getEmployeeListFn().then((data) => setRows(data as unknown as EmployeeRow[])); }}
           />
         )}
       </Dialog>
@@ -377,10 +383,10 @@ function AdminEmployees() {
 
 function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () => void; onSaved: () => void }) {
   const cfg = row.config;
-  const [homeLat, setHomeLat] = useState(cfg.home_lat?.toString() ?? "");
-  const [homeLng, setHomeLng] = useState(cfg.home_lng?.toString() ?? "");
-  const [homeR, setHomeR] = useState(String(cfg.home_radius_m));
-  const [schedule, setSchedule] = useState<Record<string, string>>({ ...cfg.weekly_schedule });
+  const [homeLat, setHomeLat] = useState(cfg?.home_lat?.toString() ?? "");
+  const [homeLng, setHomeLng] = useState(cfg?.home_lng?.toString() ?? "");
+  const [homeR, setHomeR] = useState(String(cfg?.home_radius_m ?? 200));
+  const [schedule, setSchedule] = useState<Record<string, string>>({ ...(cfg?.weekly_schedule ?? {}) });
   const [busy, setBusy] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
 
@@ -400,12 +406,15 @@ function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () =
 
   async function save() {
     setBusy(true);
-    await updateEmployeeConfig(row.user_id, {
-      home_lat: homeLat ? Number(homeLat) : null,
-      home_lng: homeLng ? Number(homeLng) : null,
-      home_radius_m: Number(homeR) || 200,
-      weekly_schedule: schedule as EmployeeConfig["weekly_schedule"],
-    });
+    await updateEmployeeConfigFn({ data: {
+      targetUserId: row.id,
+      config: {
+        home_lat: homeLat ? Number(homeLat) : null,
+        home_lng: homeLng ? Number(homeLng) : null,
+        home_radius_m: Number(homeR) || 200,
+        weekly_schedule: schedule,
+      },
+    }});
     setBusy(false);
     toast.success("Employee config saved.");
     onSaved();

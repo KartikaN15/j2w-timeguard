@@ -1,20 +1,8 @@
-import { createServerFn } from "@tanstack/react-start";
+import { api } from '@/lib/api'
 
-export const expandMapUrl = createServerFn({ method: "GET" })
-  .validator((url: unknown) => {
-    if (typeof url !== "string") throw new Error("URL must be a string");
-    return url;
-  })
-  .handler(async ({ data: url }) => {
-    try {
-      const res = await fetch(url, {
-        redirect: "follow",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; J2WAttendance/1.0)",
-        },
-      });
-      return { finalUrl: res.url };
-    } catch {
-      return { finalUrl: null };
-    }
-  });
+// Expands a (possibly shortened) map URL by asking the backend to follow
+// redirects, then returns the final URL so coordinates can be parsed from it.
+export async function expandMapUrl({ data: url }: { data: string }): Promise<{ finalUrl: string | null }> {
+  if (typeof url !== 'string') throw new Error('URL must be a string')
+  return api.get<{ finalUrl: string | null }>('/api/util/expand-url', { url })
+}

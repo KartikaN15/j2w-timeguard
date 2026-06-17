@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { getDeviceFingerprint } from "@/lib/fingerprint";
 import { getDeviceStatusFn, getEmployeeConfigFn } from "@/backend/server-fns";
-import type { EmployeeConfig } from "@/backend/mock-db";
+import type { EmployeeConfig } from "@/backend/server-fns";
 import {
   Smartphone, Navigation, Building2, CheckCircle2, XCircle,
   Loader2, Clock, Settings as SettingsIcon, MapPin,
@@ -42,9 +42,9 @@ function SettingsPage() {
     if (!user) return;
     (async () => {
       const fp = await getDeviceFingerprint();
-      const status = await getDeviceStatusFn({ data: { userId: user.id, fingerprint: fp } });
+      const status = await getDeviceStatusFn({ data: { fingerprint: fp } });
       setDeviceKind(status.kind);
-      const cfg = await getEmployeeConfigFn({ data: user.id });
+      const cfg = await getEmployeeConfigFn();
       if (cfg) {
         setEmpConfig(cfg);
         const dayKey = DAY_KEYS[new Date().getDay()];
