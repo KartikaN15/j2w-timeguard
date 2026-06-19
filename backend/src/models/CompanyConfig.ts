@@ -7,7 +7,7 @@ const companyConfigSchema = new Schema(
     office_name: { type: String, required: true, default: 'J2W Office' },
     office_lat: { type: Number, default: null },
     office_lng: { type: Number, default: null },
-    office_radius_m: { type: Number, default: 2000 },
+    office_radius_m: { type: Number, default: 1000 },
     shift_start: { type: String, default: '09:30' },
     late_threshold_min: { type: Number, default: 0 },
   },

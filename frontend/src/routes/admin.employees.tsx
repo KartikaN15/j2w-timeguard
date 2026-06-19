@@ -19,7 +19,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Home, MapPin, ExternalLink, Loader2, Search, Navigation } from "lucide-react";
+import { Building2, MapPin, ExternalLink, Loader2, Search, Navigation } from "lucide-react";
 
 export const Route = createFileRoute("/admin/employees")({
   head: () => ({ meta: [{ title: "Employees · J2W" }] }),
@@ -29,16 +29,135 @@ export const Route = createFileRoute("/admin/employees")({
 const DAY_LABELS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const SCHEDULE_OPTIONS = ["WFO", "WFH", "OFF", "FLEX"];
 
+// Extract coordinates from a pasted Google Maps URL or bare "lat, lng" string.
+function extractGoogleMapsCoords(input: string): { lat: number; lng: number } | null {
+  const patterns = [
+    /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,            // @12.9716,77.5946
+    /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,        // ?q=12.9716,77.5946
+    /\/(-?\d+\.\d{4,}),(-?\d+\.\d{4,})/,        // /12.97160,77.59460
+    /^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/,        // bare "12.9716, 77.5946"
+  ];
+  for (const re of patterns) {
+    const m = input.match(re);
+    if (m) {
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+    }
+  }
+  return null;
+}
+
+// Reusable office-location picker by address. Uses the free OpenStreetMap
+// Nominatim geocoder (no API key/billing) and parses Google Maps links.
+// Calls onPick(lat, lng) with 6-decimal strings when a place is chosen.
+function AddressSearch({ onPick }: { onPick: (lat: string, lng: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+
+  async function search() {
+    const input = query.trim();
+    if (!input) return;
+
+    // 1. Coordinates pasted directly (full Maps URL or bare lat,lng)
+    const direct = extractGoogleMapsCoords(input);
+    if (direct) {
+      onPick(direct.lat.toFixed(6), direct.lng.toFixed(6));
+      setQuery(""); setResults([]);
+      toast.success("Coordinates extracted from Google Maps link.");
+      return;
+    }
+
+    // 2. Short URL (maps.app.goo.gl / goo.gl) — expand server-side
+    const isShortUrl = /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl|bit\.ly|tinyurl\.com)/i.test(input);
+    if (isShortUrl) {
+      setLoading(true);
+      try {
+        const { finalUrl } = await expandMapUrl({ data: input });
+        const coords = finalUrl ? extractGoogleMapsCoords(finalUrl) : null;
+        if (coords) {
+          onPick(coords.lat.toFixed(6), coords.lng.toFixed(6));
+          setQuery(""); setResults([]);
+          toast.success("Location extracted from Google Maps link.");
+          return;
+        }
+        toast.error("Couldn't extract coordinates from that link. Open it in your browser, then copy the full URL from the address bar and paste that instead.");
+      } catch {
+        toast.error("Failed to resolve the short link. Paste the full Google Maps URL instead.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // 3. Plain text → search via Nominatim (free)
+    setLoading(true);
+    setResults([]);
+    try {
+      const base = `https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1`;
+      let res = await fetch(`${base}&countrycodes=in&q=${encodeURIComponent(input)}`);
+      let data = await res.json();
+      if (data.length === 0) {
+        res = await fetch(`${base}&q=${encodeURIComponent(input)}`);
+        data = await res.json();
+      }
+      setResults(data);
+      if (data.length === 0) {
+        toast.error('No results. Try "Spyne, Gurugaon" or paste the full Google Maps URL from your browser address bar.');
+      }
+    } catch {
+      toast.error("Search failed. Check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function pick(r: { display_name: string; lat: string; lon: string }) {
+    onPick(Number(r.lat).toFixed(6), Number(r.lon).toFixed(6));
+    setResults([]); setQuery("");
+    toast.success("Location set from address search.");
+  }
+
+  return (
+    <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5">
+      <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+        <Search className="h-4 w-4" />
+        Search address or paste Google Maps link
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setResults([]); }}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), search())}
+          placeholder="Search a place or paste maps link…"
+          className="h-9 text-sm flex-1 bg-white"
+        />
+        <Button type="button" size="sm" variant="default" disabled={loading || !query.trim()} onClick={search} className="shrink-0">
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      {results.length > 0 && (
+        <div className="rounded-lg border border-border bg-white shadow-sm divide-y divide-border overflow-hidden max-h-44 overflow-y-auto">
+          {results.map((r, i) => (
+            <button key={i} type="button" onClick={() => pick(r)}
+              className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors">
+              <div className="text-xs font-medium text-foreground leading-snug">{r.display_name}</div>
+              <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{Number(r.lat).toFixed(5)}, {Number(r.lon).toFixed(5)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminEmployees() {
   const [rows, setRows] = useState<EmployeeRow[]>([]);
   const [editing, setEditing] = useState<EmployeeRow | null>(null);
   const [companyCfg, setCompanyCfg] = useState<CompanyConfig | null>(null);
   const [officeSetLoading, setOfficeSetLoading] = useState(false);
   const [officeEdit, setOfficeEdit] = useState(false);
-  const [officeForm, setOfficeForm] = useState({ name: "", lat: "", lng: "", radius: "2000" });
-  const [addrQuery, setAddrQuery] = useState("");
-  const [addrLoading, setAddrLoading] = useState(false);
-  const [addrResults, setAddrResults] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [officeForm, setOfficeForm] = useState({ name: "", lat: "", lng: "", radius: "1000" });
 
   useEffect(() => {
     getEmployeeListFn().then((data) => setRows(data as unknown as EmployeeRow[]));
@@ -48,92 +167,6 @@ function AdminEmployees() {
       setOfficeForm({ name: cfg.office_name, lat: cfg.office_lat?.toString() ?? "", lng: cfg.office_lng?.toString() ?? "", radius: String(cfg.office_radius_m) });
     });
   }, []);
-
-  async function searchAddress() {
-    const input = addrQuery.trim();
-    if (!input) return;
-
-    // ── 1. Try extracting coords directly from the input (full Maps URL or bare coords) ──
-    const direct = extractGoogleMapsCoords(input);
-    if (direct) {
-      setOfficeForm((f) => ({ ...f, lat: direct.lat.toFixed(6), lng: direct.lng.toFixed(6) }));
-      setAddrQuery("");
-      toast.success("Coordinates extracted from Google Maps link.");
-      return;
-    }
-
-    // ── 2. Looks like a short URL (maps.app.goo.gl / goo.gl) — expand server-side ──
-    const isShortUrl = /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl|bit\.ly|tinyurl\.com)/i.test(input);
-    if (isShortUrl) {
-      setAddrLoading(true);
-      try {
-        const { finalUrl } = await expandMapUrl({ data: input });
-        if (finalUrl) {
-          const coords = extractGoogleMapsCoords(finalUrl);
-          if (coords) {
-            setOfficeForm((f) => ({ ...f, lat: coords.lat.toFixed(6), lng: coords.lng.toFixed(6) }));
-            setAddrQuery("");
-            toast.success("Location extracted from Google Maps link.");
-            return;
-          }
-        }
-        toast.error("Couldn't extract coordinates from that link. Try opening it in your browser, then copy the full URL from the address bar and paste that instead.");
-      } catch {
-        toast.error("Failed to resolve the short link. Paste the full Google Maps URL instead.");
-      } finally {
-        setAddrLoading(false);
-      }
-      return;
-    }
-
-    // ── 3. Plain text → search via Nominatim ──
-    setAddrLoading(true);
-    setAddrResults([]);
-    try {
-      const base = `https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1`;
-      const indiaUrl = `${base}&countrycodes=in&q=${encodeURIComponent(input)}`;
-      let res = await fetch(indiaUrl);
-      let data = await res.json();
-      if (data.length === 0) {
-        const globalUrl = `${base}&q=${encodeURIComponent(input)}`;
-        res = await fetch(globalUrl);
-        data = await res.json();
-      }
-      setAddrResults(data);
-      if (data.length === 0) {
-        toast.error('No results. Try a locality like "Whitefield, Bangalore" or paste the full Google Maps URL from your browser address bar.');
-      }
-    } catch {
-      toast.error("Search failed. Check your connection.");
-    } finally {
-      setAddrLoading(false);
-    }
-  }
-
-  function extractGoogleMapsCoords(input: string): { lat: number; lng: number } | null {
-    // Pattern: @lat,lng or q=lat,lng or /place/.../lat,lng
-    const patterns = [
-      /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,           // @12.9716,77.5946
-      /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,       // ?q=12.9716,77.5946
-      /\/(-?\d+\.\d{4,}),(-?\d+\.\d{4,})/,       // /12.97160,77.59460
-      /^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/,       // bare "12.9716, 77.5946"
-    ];
-    for (const re of patterns) {
-      const m = input.match(re);
-      if (m) {
-        const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
-        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
-      }
-    }
-    return null;
-  }
-
-  function pickAddressResult(r: { display_name: string; lat: string; lon: string }) {
-    setOfficeForm((f) => ({ ...f, lat: Number(r.lat).toFixed(6), lng: Number(r.lon).toFixed(6) }));
-    setAddrResults([]);
-    setAddrQuery("");
-    toast.success("Location set from address search.");
-  }
 
   async function useGPSForOffice() {
     setOfficeSetLoading(true);
@@ -155,12 +188,12 @@ function AdminEmployees() {
       office_name: officeForm.name || companyCfg?.office_name,
       office_lat: officeForm.lat ? Number(officeForm.lat) : null,
       office_lng: officeForm.lng ? Number(officeForm.lng) : null,
-      office_radius_m: Number(officeForm.radius) || 2000,
+      office_radius_m: Number(officeForm.radius) || 1000,
     }});
     const updated = await getCompanyConfigFn();
     if (updated) setCompanyCfg(updated as CompanyConfig);
     setOfficeEdit(false);
-    toast.success("Office location saved. All employees will use this for WFO geofence.");
+    toast.success("Office location saved. Used as the default WFO geofence.");
   }
 
   return (
@@ -175,7 +208,7 @@ function AdminEmployees() {
             <div>
               <h2 className="font-bold text-base">{companyCfg?.office_name ?? "Company Office"}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Shared for all employees on WFO days — set once by HR
+                Default WFO office — used for any employee without their own office set (per-employee offices override this)
               </p>
             </div>
           </div>
@@ -203,7 +236,7 @@ function AdminEmployees() {
       <div className="rounded-2xl bg-white border border-border shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h2 className="font-bold text-base">Employee Configuration</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Home location · weekly schedule · leave config per employee</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Office location · weekly schedule per employee</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -211,7 +244,7 @@ function AdminEmployees() {
               <tr className="border-b border-border bg-muted/30">
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Employee</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Client</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Home Location</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Office Location</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Weekly Schedule</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
               </tr>
@@ -225,14 +258,14 @@ function AdminEmployees() {
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{r.client_company ?? '—'}</td>
                   <td className="px-4 py-3">
-                    {r.config?.home_lat != null ? (
+                    {r.config?.office_lat != null ? (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Home className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                        <span className="font-mono">{r.config.home_lat.toFixed(4)}, {r.config.home_lng?.toFixed(4)}</span>
-                        <span className="text-muted-foreground/50">· {r.config.home_radius_m}m</span>
+                        <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                        <span className="font-mono">{r.config.office_lat.toFixed(4)}, {r.config.office_lng?.toFixed(4)}</span>
+                        <span className="text-muted-foreground/50">· {r.config.office_radius_m}m</span>
                       </div>
                     ) : (
-                      <span className="text-xs text-amber-600 flex items-center gap-1"><Home className="h-3.5 w-3.5" /> Not set</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> Company default</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -268,7 +301,7 @@ function AdminEmployees() {
       </div>
 
       {/* ── Office location dialog ── */}
-      <Dialog open={officeEdit} onOpenChange={(o) => { if (!o) { setOfficeEdit(false); setAddrResults([]); setAddrQuery(""); } }}>
+      <Dialog open={officeEdit} onOpenChange={(o) => { if (!o) setOfficeEdit(false); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-blue-600" /> Set Company Office Location</DialogTitle>
@@ -280,39 +313,7 @@ function AdminEmployees() {
             </div>
 
             {/* ── Option A: Google Maps link or address search ── */}
-            <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-                <Search className="h-4 w-4" />
-                Search address or paste Google Maps link
-              </div>
-              <div className="space-y-1 text-xs text-blue-700">
-                <p><strong>Option 1:</strong> Open Google Maps → find the office → copy the URL → paste below.</p>
-                <p><strong>Option 2:</strong> Type a full address like <em>"Whitefield, Bangalore, Karnataka"</em> and press Search.</p>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  value={addrQuery}
-                  onChange={(e) => { setAddrQuery(e.target.value); setAddrResults([]); }}
-                  onKeyDown={(e) => e.key === "Enter" && searchAddress()}
-                  placeholder="Paste maps.google.com link or type address…"
-                  className="h-9 text-sm flex-1 bg-white"
-                />
-                <Button size="sm" variant="default" disabled={addrLoading || !addrQuery.trim()} onClick={searchAddress} className="shrink-0">
-                  {addrLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              {addrResults.length > 0 && (
-                <div className="rounded-lg border border-border bg-white shadow-sm divide-y divide-border overflow-hidden max-h-44 overflow-y-auto">
-                  {addrResults.map((r, i) => (
-                    <button key={i} type="button" onClick={() => pickAddressResult(r)}
-                      className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors">
-                      <div className="text-xs font-medium text-foreground leading-snug">{r.display_name}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{Number(r.lat).toFixed(5)}, {Number(r.lon).toFixed(5)}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AddressSearch onPick={(lat, lng) => setOfficeForm((f) => ({ ...f, lat, lng }))} />
 
             {/* ── Option B: Use GPS ── */}
             <div className="flex items-center gap-3">
@@ -357,11 +358,11 @@ function AdminEmployees() {
             )}
 
             <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-700">
-              Applies to <strong>all WFO employees</strong>. They must punch within <strong>{officeForm.radius}m</strong> of these coordinates.
+              Default office for employees without their own office set. On WFO days they must punch within <strong>{officeForm.radius}m</strong> of these coordinates.
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setOfficeEdit(false); setAddrResults([]); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => setOfficeEdit(false)}>Cancel</Button>
             <Button onClick={saveOffice} disabled={!officeForm.lat || !officeForm.lng}>Save Office Location</Button>
           </DialogFooter>
         </DialogContent>
@@ -383,23 +384,23 @@ function AdminEmployees() {
 
 function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () => void; onSaved: () => void }) {
   const cfg = row.config;
-  const [homeLat, setHomeLat] = useState(cfg?.home_lat?.toString() ?? "");
-  const [homeLng, setHomeLng] = useState(cfg?.home_lng?.toString() ?? "");
-  const [homeR, setHomeR] = useState(String(cfg?.home_radius_m ?? 200));
+  const [officeLat, setOfficeLat] = useState(cfg?.office_lat?.toString() ?? "");
+  const [officeLng, setOfficeLng] = useState(cfg?.office_lng?.toString() ?? "");
+  const [officeR, setOfficeR] = useState(String(cfg?.office_radius_m ?? 1000));
   const [schedule, setSchedule] = useState<Record<string, string>>({ ...(cfg?.weekly_schedule ?? {}) });
   const [busy, setBusy] = useState(false);
-  const [gpsLoading, setGpsLoading] = useState(false);
+  const [officeGpsLoading, setOfficeGpsLoading] = useState(false);
 
-  function useGPS() {
-    setGpsLoading(true);
+  function useGPSForOffice() {
+    setOfficeGpsLoading(true);
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        setHomeLat(p.coords.latitude.toFixed(6));
-        setHomeLng(p.coords.longitude.toFixed(6));
-        setGpsLoading(false);
-        toast.success(`Home GPS captured ±${Math.round(p.coords.accuracy)}m`);
+        setOfficeLat(p.coords.latitude.toFixed(6));
+        setOfficeLng(p.coords.longitude.toFixed(6));
+        setOfficeGpsLoading(false);
+        toast.success(`Office GPS captured ±${Math.round(p.coords.accuracy)}m`);
       },
-      (e) => { toast.error(e.message); setGpsLoading(false); },
+      (e) => { toast.error(e.message); setOfficeGpsLoading(false); },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
     );
   }
@@ -409,9 +410,9 @@ function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () =
     await updateEmployeeConfigFn({ data: {
       targetUserId: row.id,
       config: {
-        home_lat: homeLat ? Number(homeLat) : null,
-        home_lng: homeLng ? Number(homeLng) : null,
-        home_radius_m: Number(homeR) || 200,
+        office_lat: officeLat ? Number(officeLat) : null,
+        office_lng: officeLng ? Number(officeLng) : null,
+        office_radius_m: Number(officeR) || 1000,
         weekly_schedule: schedule,
       },
     }});
@@ -427,20 +428,28 @@ function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () =
       </DialogHeader>
 
       <div className="space-y-5">
-        {/* Home location */}
+        {/* Office location (per employee / client site) */}
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-semibold flex items-center gap-2"><Home className="h-4 w-4 text-green-600" /> Home Location (WFH days)</span>
-            <Button size="sm" variant="ghost" disabled={gpsLoading} onClick={useGPS}>
-              {gpsLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Getting…</> : "Use my GPS"}
+            <span className="text-sm font-semibold flex items-center gap-2"><Building2 className="h-4 w-4 text-blue-600" /> Office Location (WFO days)</span>
+            <Button size="sm" variant="ghost" disabled={officeGpsLoading} onClick={useGPSForOffice}>
+              {officeGpsLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Getting…</> : "Use my GPS"}
             </Button>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="Latitude" value={homeLat} onChange={setHomeLat} />
-            <Field label="Longitude" value={homeLng} onChange={setHomeLng} />
-            <Field label="Radius (m)" value={homeR} onChange={setHomeR} />
+          <AddressSearch onPick={(lat, lng) => { setOfficeLat(lat); setOfficeLng(lng); }} />
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <Field label="Latitude" value={officeLat} onChange={setOfficeLat} />
+            <Field label="Longitude" value={officeLng} onChange={setOfficeLng} />
+            <Field label="Radius (m)" value={officeR} onChange={setOfficeR} />
           </div>
-          <p className="mt-1.5 text-xs text-muted-foreground">Employee must be within this radius of home on WFH days.</p>
+          {officeLat && officeLng ? (
+            <a href={`https://www.google.com/maps?q=${officeLat},${officeLng}`} target="_blank" rel="noopener noreferrer"
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+              <ExternalLink className="h-3 w-3" /> Verify on Google Maps
+            </a>
+          ) : (
+            <p className="mt-1.5 text-xs text-muted-foreground">Leave blank to use the shared company office for this employee's WFO days.</p>
+          )}
         </div>
 
         {/* Weekly schedule */}
@@ -462,7 +471,7 @@ function EditDialog({ row, onClose, onSaved }: { row: EmployeeRow; onClose: () =
             ))}
           </div>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            WFO = office geofence enforced · WFH = home geofence enforced · OFF = non-working day
+            WFO = must be within 1km of office · WFH = within 50km of office · OFF = non-working day
           </p>
         </div>
       </div>

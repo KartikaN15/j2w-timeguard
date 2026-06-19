@@ -96,13 +96,23 @@ attendanceRouter.post(
     let warning: string | undefined
 
     if (data.lat !== null && data.lng !== null) {
+      // Resolve the office to measure against: the employee's own office
+      // (different clients/sites have different locations) takes precedence,
+      // falling back to the shared company office only when none is set.
+      const hasEmpOffice = cfg.office_lat != null && cfg.office_lng != null
+      const officeLat = hasEmpOffice ? cfg.office_lat! : (companyCfg.office_lat ?? null)
+      const officeLng = hasEmpOffice ? cfg.office_lng! : (companyCfg.office_lng ?? null)
+      const officeRadius = hasEmpOffice ? cfg.office_radius_m : (companyCfg.office_radius_m ?? 1000)
+
+      // Home zones are no longer used: WFO checks the office radius (≈1km),
+      // WFH checks distance-from-office (≤50km) below.
       const geo = evaluateGeofence(data.lat, data.lng, {
-        office_lat: companyCfg.office_lat ?? null,
-        office_lng: companyCfg.office_lng ?? null,
-        office_radius_m: companyCfg.office_radius_m ?? 2000,
-        home_lat: cfg.home_lat ?? null,
-        home_lng: cfg.home_lng ?? null,
-        home_radius_m: cfg.home_radius_m ?? 200,
+        office_lat: officeLat,
+        office_lng: officeLng,
+        office_radius_m: officeRadius,
+        home_lat: null,
+        home_lng: null,
+        home_radius_m: 0,
       })
       geofenceStatus = geo.status
 
@@ -112,11 +122,11 @@ attendanceRouter.post(
         warning = `WFO location flagged: ${dist}m from office zone. Punch recorded and flagged for HR review.`
       }
 
-      if (scheduleType === 'WFH' && companyCfg.office_lat != null && companyCfg.office_lng != null) {
-        const distKm = haversineMeters(data.lat, data.lng, companyCfg.office_lat, companyCfg.office_lng) / 1000
-        if (distKm > 100) {
+      if (scheduleType === 'WFH' && officeLat != null && officeLng != null) {
+        const distKm = haversineMeters(data.lat, data.lng, officeLat, officeLng) / 1000
+        if (distKm > 50) {
           anomalies.push('wfh_outside_city_range')
-          warning = `WFH flagged: ${Math.round(distKm)}km from office — expected within 100km.`
+          warning = `WFH flagged: ${Math.round(distKm)}km from office — expected within 50km.`
         }
       }
 

@@ -115,8 +115,12 @@ function PunchPage() {
       setStats(s);
       if (cfg) setEmpConfig(cfg);
       setTodayEvents(events);
-      if (company && company.office_lat != null && company.office_lng != null) {
-        setOffice({ lat: company.office_lat, lng: company.office_lng, radius: company.office_radius_m ?? 2000 });
+      // Prefer the employee's own office (per client/site); fall back to the
+      // shared company office. Must mirror the backend geofence resolution.
+      if (cfg && cfg.office_lat != null && cfg.office_lng != null) {
+        setOffice({ lat: cfg.office_lat, lng: cfg.office_lng, radius: cfg.office_radius_m });
+      } else if (company && company.office_lat != null && company.office_lng != null) {
+        setOffice({ lat: company.office_lat, lng: company.office_lng, radius: company.office_radius_m ?? 300 });
       }
       if (company?.shift_start) setShiftStart(company.shift_start);
       if (cfg) {
@@ -153,21 +157,14 @@ function PunchPage() {
     setLocFetching(false);
     if (!pos) { toast.error("Could not get location. Check browser permissions."); return; }
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
-    // Client-side geofence preview against saved config
+    // Client-side geofence preview against the resolved `office` (employee
+    // office if set, else company office) — mirrors the backend punch check.
     let geofenceLabel = "Geofence not configured";
     let geofenceColor = "text-amber-600";
-    if (empConfig) {
-      const officeOk = empConfig.office_lat != null && haversineM(lat, lng, empConfig.office_lat, empConfig.office_lng!) <= empConfig.office_radius_m;
-      const homeOk = empConfig.home_lat != null && haversineM(lat, lng, empConfig.home_lat, empConfig.home_lng!) <= empConfig.home_radius_m;
-      if (officeOk) { geofenceLabel = `Inside office zone (≤${empConfig.office_radius_m}m)`; geofenceColor = "text-blue-600"; }
-      else if (homeOk) { geofenceLabel = `Inside home zone (≤${empConfig.home_radius_m}m)`; geofenceColor = "text-green-600"; }
-      else if (empConfig.office_lat != null || empConfig.home_lat != null) {
-        const distO = empConfig.office_lat != null ? Math.round(haversineM(lat, lng, empConfig.office_lat, empConfig.office_lng!)) : null;
-        const distH = empConfig.home_lat != null ? Math.round(haversineM(lat, lng, empConfig.home_lat, empConfig.home_lng!)) : null;
-        const parts = [distO != null ? `${distO}m from office` : null, distH != null ? `${distH}m from home` : null].filter(Boolean);
-        geofenceLabel = `Outside zones — ${parts.join(", ")}`;
-        geofenceColor = "text-red-600";
-      }
+    if (office) {
+      const distO = Math.round(haversineM(lat, lng, office.lat, office.lng));
+      if (distO <= office.radius) { geofenceLabel = `Inside office zone (≤${office.radius}m)`; geofenceColor = "text-blue-600"; }
+      else { geofenceLabel = `Outside office zone — ${distO}m from office`; geofenceColor = "text-red-600"; }
     }
     setLocationPreview({ lat, lng, accuracy: pos.coords.accuracy, geofenceLabel, geofenceColor });
   }

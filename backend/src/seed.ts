@@ -51,7 +51,7 @@ async function run() {
   company.office_name = 'J2W Bengaluru HQ'
   company.office_lat = OFFICE.lat
   company.office_lng = OFFICE.lng
-  company.office_radius_m = 2000
+  company.office_radius_m = 1000
   company.shift_start = '09:30'
   await company.save()
 

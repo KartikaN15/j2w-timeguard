@@ -15,6 +15,10 @@ export function GeofenceMap({ current, office, home, className }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<L.Layer[]>([]);
+  // Latest props, read inside the redraw effect without making it a dependency
+  // (the parent re-renders every second for the live clock).
+  const propsRef = useRef({ current, office, home });
+  propsRef.current = { current, office, home };
 
   // Init map once
   useEffect(() => {
@@ -25,7 +29,11 @@ export function GeofenceMap({ current, office, home, className }: Props) {
       ? [office.lat, office.lng]
       : [12.9716, 77.5946];
     const map = L.map(containerRef.current, { zoomControl: true, attributionControl: false }).setView(center, 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    // Esri World Street Map — English/romanized labels (no API key needed).
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      attribution: "Tiles © Esri",
+    }).addTo(map);
     mapRef.current = map;
     // Leaflet needs a size recalc once the container is laid out
     setTimeout(() => map.invalidateSize(), 100);
@@ -35,10 +43,19 @@ export function GeofenceMap({ current, office, home, className }: Props) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redraw overlays when inputs change
+  // Signature of the actual coordinates — only changes when a real value moves,
+  // so manual zoom/pan is never reset by the per-second parent re-renders.
+  const sig = JSON.stringify({
+    c: current ? [current.lat, current.lng, current.accuracy] : null,
+    o: office ? [office.lat, office.lng, office.radius] : null,
+    h: home ? [home.lat, home.lng, home.radius] : null,
+  });
+
+  // Redraw overlays only when the coordinate signature changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const { current, office, home } = propsRef.current;
 
     layersRef.current.forEach((l) => map.removeLayer(l));
     layersRef.current = [];
@@ -96,7 +113,7 @@ export function GeofenceMap({ current, office, home, className }: Props) {
     } else if (bounds.length > 1) {
       map.fitBounds(L.latLngBounds(bounds).pad(0.4));
     }
-  }, [current, office, home]);
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={containerRef} className={className ?? "h-64 w-full rounded-xl overflow-hidden border border-border z-0"} />;
 }

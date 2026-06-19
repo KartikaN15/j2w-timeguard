@@ -7,7 +7,7 @@ const employeeConfigSchema = new Schema(
     user_id: { type: Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
     office_lat: { type: Number, default: null },
     office_lng: { type: Number, default: null },
-    office_radius_m: { type: Number, default: 150 },
+    office_radius_m: { type: Number, default: 1000 },
     home_lat: { type: Number, default: null },
     home_lng: { type: Number, default: null },
     home_radius_m: { type: Number, default: 200 },

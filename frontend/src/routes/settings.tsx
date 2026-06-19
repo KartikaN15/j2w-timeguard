@@ -7,7 +7,7 @@ import type { EmployeeConfig } from "@/backend/server-fns";
 import {
   Smartphone, Navigation, Building2, CheckCircle2, XCircle,
   Loader2, Clock, Settings as SettingsIcon, MapPin,
-  ShieldCheck, Info, Mail, Phone,
+  ShieldCheck, Info, Mail, Phone, LogOut,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
@@ -28,7 +28,7 @@ type PermState = "unknown" | "granted" | "denied" | "prompt";
 
 function SettingsPage() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const [deviceKind, setDeviceKind] = useState<"loading" | "approved" | "pending" | "unregistered">("loading");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [empConfig, setEmpConfig] = useState<EmployeeConfig | null>(null);
@@ -165,14 +165,14 @@ function SettingsPage() {
                 color="bg-blue-50 border-blue-100 text-blue-700"
                 dotColor="bg-blue-400"
                 title="WFO Days"
-                rule="Must punch from within 2km of the J2W office. Punch outside this zone is blocked."
+                rule="Must punch from within 1km of your assigned office. Punch outside this zone is flagged for HR review."
               />
               <RuleCard
                 icon={<MapPin className="h-3.5 w-3.5" />}
                 color="bg-green-50 border-green-100 text-green-700"
                 dotColor="bg-green-400"
                 title="WFH Days"
-                rule="Punch from anywhere within 100km of office. Beyond 100km is flagged for HR review."
+                rule="Punch from anywhere within 50km of your office. Beyond 50km is flagged for HR review."
               />
               <RuleCard
                 icon={<Clock className="h-3.5 w-3.5" />}
@@ -186,7 +186,7 @@ function SettingsPage() {
                 color="bg-purple-50 border-purple-100 text-purple-700"
                 dotColor="bg-purple-400"
                 title="FLEX Days"
-                rule="Punch from office or home zone. Location outside both zones is flagged but not blocked."
+                rule="Punch from within the office zone. Location outside is flagged but not blocked."
               />
             </div>
           </div>
@@ -222,10 +222,25 @@ function SettingsPage() {
             </div>
           </div>
 
+          {/* Account */}
+          <div className="rounded-2xl bg-white border border-border shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-border">
+              <h3 className="font-semibold text-sm">Account</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Signed in as {user.user_metadata.full_name}</p>
+            </div>
+            <div className="p-4">
+              <button onClick={() => signOut()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            </div>
+          </div>
+
           {/* App info */}
           <div className="rounded-2xl border border-border bg-white shadow-sm p-4">
             <div className="text-[10px] text-muted-foreground/60 text-center space-y-0.5">
-              <div className="font-semibold text-muted-foreground">J2W TimeGuard</div>
+              <div className="font-semibold text-muted-foreground">J2W eAttendance</div>
               <div>GPS-verified attendance · Demo mode</div>
               <div>© 2026 Joules to Watts Business Solutions</div>
             </div>
